@@ -1,0 +1,53 @@
+name: pass1-gate
+# Operator-triggered Pass-1 gate run against a submitted book repo at a pinned SHA.
+# Kept in the platform repo (not injected into author forks) so authors can't alter
+# the gate that judges them. Manual dispatch matches the v1 manual SOP.
+
+on:
+  workflow_dispatch:
+    inputs:
+      book_repo:
+        description: "owner/repo of the submitted book"
+        required: true
+      sha:
+        description: "commit SHA declared in the submission issue"
+        required: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout platform (the gates)
+        uses: actions/checkout@v4
+        with:
+          path: platform
+
+      - name: Checkout book at declared SHA
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.book_repo }}
+          ref: ${{ inputs.sha }}
+          path: book
+
+      - name: Run Pass-1 gates
+        id: gates
+        run: |
+          set +e
+          python3 platform/gates/pass1.py book
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pass1-report-${{ inputs.sha }}
+          path: book/pass1-report.json
+
+      - name: Verdict
+        run: |
+          if [ "${{ steps.gates.outputs.exit_code }}" != "0" ]; then
+            echo "::error::Pass 1 REJECT — see pass1-report artifact"
+            exit 1
+          fi
+          echo "Pass 1 PASS"

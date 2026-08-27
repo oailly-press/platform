@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oailly.internal/schemas/book-manifest/v1",
+  "title": "O'AILLY Book Manifest v1",
+  "description": "Machine-readable identity of a book: what it is, what wrote it, what grounded it, who verified it, and how it was reviewed. Mirrors the printed provenance page; the two must never disagree.",
+  "type": "object",
+  "required": ["manifest_version", "book", "structure", "provenance", "review", "signing"],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_version": { "const": "1.0" },
+
+    "book": {
+      "type": "object",
+      "required": ["title", "subtitle", "tier", "language", "audience", "edition", "series"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "subtitle": { "type": "string" },
+        "tier": { "enum": ["pocket", "standard", "comprehensive"] },
+        "language": { "type": "string", "description": "BCP 47, e.g. en" },
+        "audience": { "type": "string", "description": "One sentence: who this book is for and what it assumes." },
+        "edition": { "type": "integer", "minimum": 1 },
+        "series": { "type": ["string", "null"] },
+        "isbn": { "type": ["string", "null"] }
+      }
+    },
+
+    "structure": {
+      "type": "object",
+      "required": ["word_count_body", "print_equivalent_pages", "chapters", "has_glossary_or_index", "code_listing_policy"],
+      "additionalProperties": false,
+      "properties": {
+        "word_count_body": {
+          "type": "integer", "minimum": 25000,
+          "description": "Body prose + captions; excludes front/back matter, code listings, provenance page. Hard floor 25000 (BOOK-STANDARDS §1)."
+        },
+        "print_equivalent_pages": { "type": "integer", "description": "word_count_body / 300, rounded." },
+        "chapters": {
+          "type": "array", "minItems": 6,
+          "items": {
+            "type": "object",
+            "required": ["number", "title", "words", "source_file", "written_by"],
+            "additionalProperties": false,
+            "properties": {
+              "number": { "type": "integer", "minimum": 1 },
+              "title": { "type": "string" },
+              "words": { "type": "integer", "minimum": 2500, "maximum": 12000 },
+              "source_file": { "type": "string", "description": "Path to canonical Markdown within the book source tree." },
+              "written_by": {
+                "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/model_id" },
+                "description": "Per-chapter attribution when the stack varies by chapter."
+              }
+            }
+          }
+        },
+        "has_glossary_or_index": { "type": "boolean" },
+        "code_listing_policy": {
+          "enum": ["all_executable", "executable_plus_marked_fragments", "no_code"],
+          "description": "Pass-1 executes listings per this declaration."
+        }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "required": ["written_by", "grounded_in", "verified_by", "tools", "disclosure_statement"],
+      "additionalProperties": false,
+      "properties": {
+        "written_by": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/model_id" } },
+        "grounded_in": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["kind", "reference"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "enum": ["url", "isbn", "doi", "dataset", "lab_entry", "interview", "standard"] },
+              "reference": { "type": "string", "description": "Resolvable identifier; Pass-1 checks resolution." },
+              "note": { "type": "string" }
+            }
+          }
+        },
+        "verified_by": {
+          "type": "object",
+          "required": ["name", "role"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1, "description": "A real, named human. No anonymous verification." },
+            "role": { "type": "string" },
+            "contact": { "type": ["string", "null"] }
+          }
+        },
+        "tools": { "type": "array", "items": { "type": "string" }, "description": "Non-model tooling that shaped content (search, executors, RAG stores)." },
+        "disclosure_statement": { "type": "string", "description": "Prose disclosure printed on the provenance page. Must be true in both directions: no hidden AI, no hidden humans." }
+      }
+    },
+
+    "publisher": {
+      "type": "object",
+      "required": ["account", "steward"],
+      "additionalProperties": false,
+      "properties": {
+        "account": { "type": "string", "description": "Registered publisher account id." },
+        "steward": {
+          "type": "object",
+          "required": ["name"],
+          "properties": { "name": { "type": "string" }, "entity": { "type": ["string", "null"] } },
+          "description": "Named human or legal entity responsible for the account (PUBLISHING-PIPELINE §1)."
+        }
+      }
+    },
+
+    "review": {
+      "type": "object",
+      "required": ["status", "trail_uri", "passes"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["draft", "in_review", "published", "published_with_errata", "retracted"] },
+        "trail_uri": { "type": ["string", "null"], "description": "Published review trail (critiques, revisions, verdict). Required non-null when status is published*." },
+        "passes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["pass", "date", "outcome"],
+            "additionalProperties": false,
+            "properties": {
+              "pass": { "enum": ["gates", "critics", "verification", "judge"] },
+              "date": { "type": "string", "format": "date" },
+              "outcome": { "type": "string" },
+              "reviewers": { "type": "array", "items": { "$ref": "#/$defs/model_id" } },
+              "human": { "type": ["string", "null"], "description": "Named human on the judge pass." }
+            }
+          }
+        },
+        "errata_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["date", "summary", "release"],
+            "properties": { "date": { "type": "string", "format": "date" }, "summary": { "type": "string" }, "release": { "type": "string" } }
+          }
+        },
+        "retraction": {
+          "type": ["object", "null"],
+          "required": ["date", "reason"],
+          "properties": { "date": { "type": "string", "format": "date" }, "reason": { "type": "string" } },
+          "description": "Non-null only when status is retracted. Retracted books remain visible as tombstones."
+        }
+      }
+    },
+
+    "cover": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Cover art is produced by the PLATFORM, never the author. The author only requests a mascot; assignment happens at publication (BRAND.md bestiary rules, one creature per book platform-wide).",
+      "properties": {
+        "mascot_request": {
+          "type": ["object", "null"],
+          "required": ["creature", "why"],
+          "additionalProperties": false,
+          "properties": {
+            "creature": { "type": "string", "description": "Requested creature from the extended circuit bestiary (insects preferred; invertebrates only; never vertebrates)." },
+            "why": { "type": "string", "minLength": 20, "description": "Why this creature fits the book's subject — the rationale is what the platform actually reads." }
+          }
+        },
+        "assigned": {
+          "type": ["object", "null"],
+          "required": ["creature", "accent"],
+          "additionalProperties": false,
+          "properties": {
+            "creature": { "type": "string" },
+            "accent": { "type": "string", "description": "Hex accent color from the brand palette." },
+            "assigned_date": { "type": "string", "format": "date" }
+          },
+          "description": "Set by the platform at publication; null until then. Recorded in platform/mascot-registry.md."
+        }
+      }
+    },
+
+    "signing": {
+      "type": "object",
+      "required": ["author_signature", "platform_signature", "c2pa_manifest_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "author_signature": { "type": ["string", "null"], "description": "Publisher key signature over the source tree." },
+        "platform_signature": { "type": ["string", "null"], "description": "Platform countersignature at publication." },
+        "c2pa_manifest_hash": { "type": ["string", "null"] }
+      }
+    }
+  },
+
+  "$defs": {
+    "model_id": {
+      "type": "object",
+      "required": ["model", "version", "operator"],
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string", "description": "e.g. claude-fable-5" },
+        "version": { "type": "string", "description": "Exact version/snapshot identifier." },
+        "operator": { "type": "string", "description": "Who ran it." }
+      }
+    }
+  }
+}
