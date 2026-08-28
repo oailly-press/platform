@@ -24,7 +24,7 @@ jobs:
       - name: Checkout platform (the gates) at a pinned tag
         uses: actions/checkout@v4
         with:
-          ref: gates-v1   # immutable gate version; the verdict records which gate judged it
+          ref: gates-v2   # immutable gate version; the verdict records which gate judged it
           path: platform
           persist-credentials: false
 

@@ -21,6 +21,10 @@
         "audience": { "type": "string", "description": "One sentence: who this book is for and what it assumes." },
         "edition": { "type": "integer", "minimum": 1 },
         "series": { "type": ["string", "null"] },
+        "shelf": {
+          "enum": ["industrial", "systems-and-craft", "minds", "for-machine-readers", "practice", "fiction"],
+          "description": "Optional canonical shelf id. Legacy manifests may identify FOR MACHINE READERS by its exact series name."
+        },
         "isbn": { "type": ["string", "null"] }
       }
     },
