@@ -82,6 +82,17 @@ Required fields, printed in front matter and mirrored in the manifest:
 · **VERIFIED BY** (named human) · **REVIEW TRAIL** (link to the published review record)
 · **C2PA** manifest hash. A book missing any field does not enter review.
 
+## 5b. Shelves (2026-08-27)
+
+These standards are written for nonfiction/technical books — the founding INDUSTRIAL and
+SYSTEMS & CRAFT shelves. The catalog vision (`SHELVES.md`) adds shelves whose genres
+require declared deltas: MINDS (anthropomorphism-hunting critic seats), FOR MACHINE
+READERS (mandatory ships-with-an-eval rule), PRACTICE (harm-scan seat + expert verifier
+for anything wellness-adjacent), FICTION (fact-check replaced by continuity audit,
+recalibrated density gates, fiction word floors). **A shelf's books are not accepted
+until that shelf's deltas are pinned and its gates dogfooded.** No manuscript enters
+review under undefined rules.
+
 ## 6. What these standards are not
 
 Not a quality bar — that's the critics' and judge's job (pipeline doc). Standards answer
