@@ -73,9 +73,20 @@ def read_report(fork: Path):
         if p.is_file():
             t = p.read_text(encoding="utf-8", errors="replace")
             resolved = len(re.findall(r"\bresolved\b", t, re.I))
-            openf = len(re.findall(r"still[- ]open", t, re.I))
+            # "Still-open blocking findings: none" means zero, not one open finding
+            if re.search(r"still[- ]open[^.\n]*?:?\s*\**\s*none", t, re.I):
+                openf = 0
+            else:
+                openf = len(re.findall(r"still[- ]open", t, re.I))
             return {"resolved": resolved, "still_open": openf, "has_card": True}
     return {"resolved": 0, "still_open": 0, "has_card": False}
+
+
+def absurl(p):
+    """Make a catalog-relative asset path absolute so it resolves under /book/ too."""
+    if not p or p.startswith(("/", "http")):
+        return p
+    return "/" + p
 
 
 def load_status(book_id: str):
@@ -123,7 +134,8 @@ def main():
             "series_no": b.get("series_no"), "shelf": b.get("shelf"), "tier": b.get("tier"),
             "aibn": b.get("aibn"), "accent": (b.get("mascot") or {}).get("accent"),
             "creature": (b.get("mascot") or {}).get("creature"),
-            "cover": b.get("cover"), "cover_back": b.get("cover_back"), "cover_spread": b.get("cover_spread"),
+            "cover": absurl(b.get("cover")), "cover_back": absurl(b.get("cover_back")),
+            "cover_spread": absurl(b.get("cover_spread")),
             "written_by": [x for x in (b.get("written_by") or []) if x and x.lower() != "tbd"],
             "verified_by": b.get("verified_by"), "keywords": b.get("keywords") or [],
             "progress": b.get("progress"), "catalog_status": b.get("status"),
