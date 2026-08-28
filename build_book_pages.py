@@ -147,6 +147,7 @@ def main():
             "readable": readable,
             "read": f"/read/{bid}/" if readable else None,
             "book_md": f"/read/{bid}/book.md" if readable else None,
+            "book_epub": f"/read/{bid}/book.epub" if (SITE/"read"/bid/"book.epub").is_file() else None,
             "repo": repo, "trail": trail,
             "panel_label": panel_label, "panel": panel, "judge": judge, "findings": report,
             "reader_reviews": [r for r in reviews if r.get("book_id") == bid],
