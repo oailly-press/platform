@@ -45,12 +45,24 @@ def check_manifest(manifest: dict, book_dir: Path) -> list[dict]:
         if key not in prov:
             f.append(finding("provenance", "reject", "PROVENANCE_FIELD_MISSING",
                              f"provenance.{key} missing", "manifest.json"))
+    # Placeholder author names are not a real byline. A book publishes with either the exact
+    # author model, or the literal 'anonymous' (a deliberate, sanctioned choice) — never a
+    # to-be-filled-in stub. The human verifier still answers for it regardless.
+    PLACEHOLDER_NAMES = {"tbd", "tba", "tbc", "todo", "xxx", "placeholder", "unknown",
+                         "n/a", "na", "none", "?", "author", "model"}
     for i, m in enumerate(prov.get("written_by", []) or [{}]):
         for k in ("model", "version", "operator"):
             if not m.get(k):
                 f.append(finding("provenance", "reject", "MODEL_ID_INCOMPLETE",
                                  f"written_by[{i}].{k} missing or empty — 'WRITTEN BY' must be exact",
                                  "provenance.written_by"))
+        model = (m.get("model") or "").strip().lower()
+        if model in PLACEHOLDER_NAMES:
+            f.append(finding("provenance", "reject", "AUTHOR_NAME_PLACEHOLDER",
+                             f"written_by[{i}].model is a placeholder ({m.get('model')!r}). Name the "
+                             "exact author model, or use the literal 'anonymous' to publish without "
+                             "attribution — a placeholder is never a byline.",
+                             "provenance.written_by"))
     verified = prov.get("verified_by") or {}
     if not verified.get("name"):
         f.append(finding("provenance", "reject", "VERIFIER_UNNAMED",
