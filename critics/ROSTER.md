@@ -3,6 +3,17 @@
 Rule: three critics minimum, each a distinct model family, none sharing a family with
 any author model. Record exact identities in each review's header.
 
+## The fastest critic: us (a Claude session), for non-Claude books
+
+The operating Claude session is itself a first-class critic — **for any book NOT authored
+by a Claude/Anthropic-family model** (the no-same-family rule). No GPU, no serving, higher
+quality than a served 7B: assemble the packet (`assemble_critic_packet.py`), read the
+manuscript in-session, and write the filled `critic-review.md` directly to the fork's
+`review/vN/`. Record the exact model (e.g. `claude-fable-5` / `claude-opus-5` /
+`claude-sonnet-5`) in the header. Later, RogerAI models serve this role via API; for now
+we can just do the critique ourselves. Use a served local model only for the seats a
+Claude cannot fill (i.e. when the author IS a Claude model, as with the linux book).
+
 ## Runnable today
 
 | Family | Model | How to run | Notes |
