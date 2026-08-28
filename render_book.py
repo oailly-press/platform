@@ -37,6 +37,15 @@ SHELL = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{page_title}</title>
+<meta name="description" content="{og_desc}">
+<meta property="og:type" content="book">
+<meta property="og:title" content="{og_title}">
+<meta property="og:description" content="{og_desc}">
+<meta property="og:url" content="{og_url}">
+<meta property="og:image" content="{og_image}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{og_title}">
+<meta name="twitter:image" content="{og_image}">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Inter:wght@400;500;600&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{{--ink:#0E1116;--ink2:#151A21;--paper:#E8EAED;--muted:#8A919C;--line:#232A33;--accent:{accent};
@@ -214,11 +223,20 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     out_dir.mkdir(parents=True, exist_ok=True)
     pyg = HtmlFormatter(style="monokai").get_style_defs(".codehilite")
 
+    def _attr(s):
+        return str(s).replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
     def shell(page_title, content):
+        bid = out_dir.name
+        og_img = f"https://oailly.com/assets/og/{bid}.png"
+        og_url = f"https://oailly.com/read/{bid}/"
+        og_desc = _attr((book.get("subtitle") or book["title"])
+                        + " — written by machines, verified by humans, signed all the way down.")
         return SHELL.format(lang=book.get("language", "en"), page_title=page_title,
                             accent=accent, home="/", slug=slug,
                             book_title_upper=book["title"].upper(), content=content,
-                            pyg=pyg)
+                            pyg=pyg, og_title=_attr(book["title"]), og_desc=og_desc,
+                            og_url=og_url, og_image=og_img)
 
     # --- book identity: AIBN + cover art (cover-to-cover reader) ---
     book_id = out_dir.name                    # read/<book_id>/
