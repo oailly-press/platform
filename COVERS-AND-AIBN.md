@@ -49,6 +49,31 @@ All five insects are now image-derived. To make a new one:
 4. `.buildenv/bin/python platform/ascii_art.py <png> 74 0.30 1.0 > brand/covers/ascii/<name>.txt`
    (tune width/floor for clean line-art-on-dark). `cover_spread.py` loads `ascii/<name>.txt`.
 
+## Hero art — the animated ASCII insect on the homepage
+
+The homepage `#hero` rotates a book's insect as animated ASCII (per-row reveal + slow bob +
+char-level spark twinkle + ambient rising glyphs, all coloured by the book's accent), one book
+per `slot_hours` (default 6). The art lives in `gh/site-repo/hero-art.json`
+(`{slot_hours, books:{<book_id>:{accent, art:[...lines]}}}`).
+
+**Generate it from the same Flux insect render used on the cover** — `build_hero_art.py` is the
+recipe, executable:
+
+```bash
+python3 platform/build_hero_art.py <book_id> brand/covers/comfyui/<insect>-<book>-v1.png '<accent>' \
+    [--width 60] [--floor 0.28] [--gamma 1.0]
+# e.g. the termite for Linux:
+python3 platform/build_hero_art.py rogerai-labs--linux-for-language-models \
+    brand/covers/comfyui/termite-linux-v1.png '#C6923E' --width 60 --floor 0.30
+```
+
+- **width** — hero art reads well at ~56–64 cols for a broad insect; a **narrow/vertical** creature
+  (a caterpillar) needs a *larger* width (~100–110) to gain body detail before it's dedented tight.
+- **floor** — 0.24–0.32; raises the black-background cutoff so only the bright circuit-linework
+  becomes glyphs. Light traces/pads → densest characters; the creature draws itself.
+- The tool dedents the common left margin and upserts the book into `hero-art.json`; the homepage
+  animation is automatic. Add a book here when it publishes so it joins the rotation.
+
 ## Reader — cover to cover
 
 `platform/render_book.py` auto-detects the covers and the AIBN:
