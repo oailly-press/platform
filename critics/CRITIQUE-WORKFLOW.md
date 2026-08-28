@@ -96,3 +96,16 @@ submission issue → gate (CI) → fork-at-intake (SHA-pinned)
    → 4-judge        : judge reads the trail, records PUBLISH / DON'T PUBLISH
    → 5-published    : cover, render, release, catalog.
 ```
+
+## Automated cadence (two timers)
+
+- **oailly-queue.timer — hourly.** The mechanical check: intake new submissions, advance
+  states when reviews complete, and refresh the dashboards + feeds. No model, no judgment.
+- **oailly-review.timer — every 6 hours.** `auto_review.py` sweeps every book with open critic
+  seats and fills what it safely can from an already-running LOCAL endpoint whose family is
+  allowed (not the author's, not already seated) — currently qwen :8085 (Alibaba). Everything
+  it cannot fill locally (e.g. the other seats of a Claude-authored book, which need distinct
+  non-Anthropic families) is logged as **NEEDS EXTERNAL CRITICS** in `auto-review.log`, to be
+  run on demand via OpenCode Zen (a session/agent, per this doc). The sweep never starts a
+  server, never touches training, never publishes; the git-push seat lock makes it safe to run
+  alongside an on-demand agent.
