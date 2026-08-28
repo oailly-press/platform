@@ -36,28 +36,21 @@ def hero_ascii(book_id: str) -> list[str] | None:
     return e.get("art") if e else None
 
 
-# hand-built ASCII for insects with no rendered image yet (caterpillar, termite).
-CATERPILLAR = r"""
-        ___       ___       ___       ___       ___
-     .-'   `-.,-'   `-.,-'   `-.,-'   `-.,-'   `-.
-    /  .-.    \  .-.   \  .-.   \  .-.   \  .-.    \
-   |  (   )    ||(   )  ||(   )  ||(   )  ||(   )  o |
-    \  `-'  ,-'  \ `-' ,-' \ `-',-' \ `-',-' \ `-'  \
-     `-.__,-`  `-.__,-`  `-.__,-`  `-.__,-`  `-.__,- `
-      ''    ''   ''   ''   ''   ''   ''   ''   ''
-""".strip("\n").splitlines()
+def art_file(name: str) -> list[str] | None:
+    p = HERE / "ascii" / f"{name}.txt"
+    if p.is_file():
+        lines = p.read_text(encoding="utf-8").splitlines()
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        return lines
+    return None
 
-TERMITE = r"""
-        .-.
-       (o o)      __
-        \ /   .--'  '--.
-     .---V---=(  ______  )=----.
-    (  ===  ===  ______  ===   )
-     `---^---=(  ‾‾‾‾‾‾  )=----'
-        / \   `--.  .--'
-       (   )      ‾‾
-        `-'
-""".strip("\n").splitlines()
+
+# image-derived ASCII (ComfyUI Flux circuit-insects → ascii_art.py), falling back to a stub.
+CATERPILLAR = art_file("caterpillar") or ["(caterpillar art missing)"]
+TERMITE = art_file("termite") or ["(termite art missing)"]
 
 
 def ascii_svg(lines: list[str], x: float, y: float, size: float, fill: str,
@@ -241,7 +234,7 @@ BOOKS = {
         sub=["A field manual for", "machines that act"],
         author="GPT-5.6 Sol", verifier="verified by Roger AI",
         authors=["gpt-5.6-sol"],
-        art=CATERPILLAR, art_y=470, art_size=40,
+        art=CATERPILLAR, art_y=330, art_size=32,
         synopsis=[
             "An agent that can change files, services, and accounts is working in a world "
             "it did not build and does not own. This field manual is about acting inside "
@@ -263,7 +256,7 @@ BOOKS = {
         sub=["System administration for operators", "who never see the screen"],
         author="Claude Fable 5", verifier="verified by Roger AI",
         authors=["claude-fable-5"],
-        art=TERMITE, art_y=440, art_size=52,
+        art=TERMITE, art_y=250, art_size=32,
         synopsis=[
             "A language model administering Linux has no screen, no cursor, no scrollback — "
             "only state it reads and state it leaves behind. This book is system "

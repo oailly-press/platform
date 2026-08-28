@@ -36,9 +36,18 @@ and a real, scannable **AIBN** (our ISBN for AI books) on the back. The reader r
 - Export to the site: `rsvg-convert cover-front-<slug>.svg -w 1000 -o
   gh/site-repo/assets/covers/<book_id>-front.png` (and `-back`, `-spread`).
 
-> Insects with no rendered image yet (caterpillar, termite) use a hand-built ASCII block —
-> upgrade to image-derived ASCII (`platform/ascii_art.py` on a ComfyUI render) when the GPU
-> is free; the cover regenerates from whatever `art` you give it.
+### Insect ASCII from a ComfyUI render (the house look)
+
+All five insects are now image-derived. To make a new one:
+1. Add the creature to `VARIANTS` in `brand/covers/comfyui/generate_covers.py` (house
+   circuit-insect style; colour by name, not hex).
+2. Launch ComfyUI pinned to GPU3 **only** (never touch the training lanes 0–2):
+   `cd ~/ai/comfyui && CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=3 venv/bin/python
+   main.py --listen 127.0.0.1 --port 8388 --disable-auto-launch &`  — check GPU3 has room
+   first, and `fuser -k 8388/tcp` when done.
+3. `OAILLY_CREATURES="<name>" python3 generate_covers.py <seed1> <seed2>` — pick the best PNG.
+4. `.buildenv/bin/python platform/ascii_art.py <png> 74 0.30 1.0 > brand/covers/ascii/<name>.txt`
+   (tune width/floor for clean line-art-on-dark). `cover_spread.py` loads `ascii/<name>.txt`.
 
 ## Reader — cover to cover
 
