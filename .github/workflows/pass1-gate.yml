@@ -21,9 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout platform (the gates)
+      - name: Checkout platform (the gates) at a pinned tag
         uses: actions/checkout@v4
         with:
+          ref: gates-v1   # immutable gate version; the verdict records which gate judged it
           path: platform
           persist-credentials: false
 
