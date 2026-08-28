@@ -75,6 +75,22 @@ nav.pager a{{text-decoration:none;color:var(--fg);font-family:var(--sans);font-w
 nav.pager a span{{display:block;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.12em}}
 nav.pager .next{{text-align:right;margin-left:auto}}
 @media print{{.top,#progress,nav.pager,.dl{{display:none}}body{{background:#fff;color:#000;font-size:11pt}}main{{max-width:100%;padding:0}}a{{color:#000;text-decoration:none}}}}
+/* paginated reader — a real book, flipped page by page */
+.reader{{position:relative;height:calc(100dvh - 168px);min-height:340px;overflow:hidden;margin:6px 0 2px}}
+.reader .pages{{height:100%;column-gap:60px;column-fill:auto;transition:transform .36s cubic-bezier(.3,.72,.3,1);will-change:transform}}
+.reader .pages > :first-child{{margin-top:0}}
+.reader h1{{margin-top:.2em}}
+.pnav{{position:absolute;top:0;bottom:44px;width:20%;cursor:pointer;z-index:2;display:flex;align-items:center;opacity:0;transition:opacity .2s}}
+.pnav:hover{{opacity:1}} .pnav.l{{left:0;justify-content:flex-start;padding-left:6px}} .pnav.r{{right:0;justify-content:flex-end;padding-right:6px}}
+.pnav span{{font-family:var(--mono);font-size:26px;color:var(--accent);user-select:none}}
+.pagebar{{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 2px 0;font-family:var(--mono);font-size:12px;color:var(--muted);flex-wrap:wrap}}
+.pagebar .grp{{display:flex;gap:8px;align-items:center}}
+.pagebar button{{background:none;border:1px solid var(--line);border-radius:6px;color:var(--fg);padding:5px 13px;cursor:pointer;font:inherit;line-height:1.3}}
+.pagebar button:hover:not(:disabled){{border-color:var(--accent);color:var(--accent)}}
+.pagebar button:disabled{{opacity:.35;cursor:default}}
+.pagebar .cnt{{color:var(--accent);font-variant-numeric:tabular-nums}}
+.preader{{border-bottom:1px solid var(--line);height:2px;margin:0 0 2px}}.preader i{{display:block;height:2px;background:var(--accent);width:0;transition:width .3s}}
+@media(prefers-reduced-motion:reduce){{.reader .pages{{transition:none}}}}
 {pyg}
 </style>
 </head>
@@ -113,6 +129,52 @@ apply();
 addEventListener('scroll',()=>{{const h=document.documentElement;
   const p=h.scrollTop/(h.scrollHeight-h.clientHeight)*100;
   document.getElementById('progress').style.width=(p||0)+'%';}},{{passive:true}});
+// ---- paginate chapter into real pages ----
+(function(){{
+  const reader=document.querySelector('.reader'); if(!reader) return;
+  const pages=reader.querySelector('.pages');
+  const GAP=60; let page=0, total=1, stride=0;
+  function layout(){{
+    const w=reader.clientWidth;
+    pages.style.columnWidth=w+'px'; pages.style.width='auto';
+    stride=w+GAP;
+    pages.style.transform='none';
+    total=Math.max(1, Math.round((pages.scrollWidth+GAP)/stride));
+    try{{const s=parseInt(localStorage.getItem('oailly-pg-'+reader.dataset.ch)||'0');if(s>=0&&s<total)page=s;}}catch(e){{}}
+    page=Math.min(page,total-1); apply(true);
+  }}
+  function apply(instant){{
+    if(instant)pages.style.transition='none';
+    pages.style.transform='translateX('+(-page*stride)+'px)';
+    if(instant)requestAnimationFrame(()=>{{pages.style.transition='';}});
+    const c=document.getElementById('pcnt'); if(c)c.textContent=(page+1)+' / '+total;
+    const pv=document.getElementById('ppv'),nx=document.getElementById('pnx');
+    if(pv)pv.disabled=(page===0 && !reader.dataset.prev);
+    const bar=document.getElementById('pbar'); if(bar)bar.style.width=((page+1)/total*100)+'%';
+    try{{localStorage.setItem('oailly-pg-'+reader.dataset.ch,page);}}catch(e){{}}
+  }}
+  function go(d){{
+    const np=page+d;
+    if(np<0){{ if(reader.dataset.prev)location.href=reader.dataset.prev+'#end'; return; }}
+    if(np>=total){{ location.href=reader.dataset.next||'index.html'; return; }}
+    page=np; apply(false);
+  }}
+  window.__go=go;
+  document.querySelectorAll('.pnav.l').forEach(e=>e.onclick=()=>go(-1));
+  document.querySelectorAll('.pnav.r').forEach(e=>e.onclick=()=>go(1));
+  const pv=document.getElementById('ppv'),nx=document.getElementById('pnx');
+  if(pv)pv.onclick=()=>go(-1); if(nx)nx.onclick=()=>go(1);
+  addEventListener('keydown',e=>{{if(e.key==='ArrowRight'||e.key===' '){{e.preventDefault();go(1);}}if(e.key==='ArrowLeft')go(-1);}});
+  let sx=0; reader.addEventListener('touchstart',e=>sx=e.touches[0].clientX,{{passive:true}});
+  reader.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx;if(Math.abs(dx)>45)go(dx<0?1:-1);}},{{passive:true}});
+  // land on last page when arriving from the next chapter's "prev"
+  if(location.hash==='#end'){{const once=()=>{{page=total-1;apply(true);}};setTimeout(once,60);}}
+  addEventListener('load',layout); layout();
+  let rt; addEventListener('resize',()=>{{clearTimeout(rt);rt=setTimeout(layout,150);}});
+  // re-paginate when the reader settings (size/font/theme) change
+  const mo=new MutationObserver(()=>{{clearTimeout(rt);rt=setTimeout(layout,120);}});
+  mo.observe(document.documentElement,{{attributes:true,attributeFilter:['style','data-theme','data-font']}});
+}})();
 try{{localStorage.setItem('oailly-pos-{slug}', location.pathname);}}catch(e){{}}
 </script>
 </body>
@@ -185,23 +247,33 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     idx = idx + cite
     (out_dir / "index.html").write_text(shell(book["title"], idx), encoding="utf-8")
 
-    # --- chapter pages with prev/next
+    # --- chapter pages: paginated reader (flip page by page, like a real book) ---
     for i, c in enumerate(chapters):
         text = (book_dir / c["source_file"]).read_text(encoding="utf-8")
         body = md(text)
-        pager = ['<nav class="pager">']
-        if i > 0:
-            p = chapters[i - 1]
-            pager.append(f'<a href="ch{p["number"]:02d}.html"><span>PREV</span>← {p["title"]}</a>')
-        if i + 1 < len(chapters):
-            n = chapters[i + 1]
-            pager.append(f'<a class="next" href="ch{n["number"]:02d}.html"><span>NEXT</span>{n["title"]} →</a>')
-        else:
-            pager.append('<a class="next" href="index.html"><span>END</span>Contents ↑</a>')
-        pager.append("</nav>")
-        page = body + "\n" + "".join(pager)
+        prev_href = f'ch{chapters[i-1]["number"]:02d}.html' if i > 0 else ''
+        next_href = (f'ch{chapters[i+1]["number"]:02d}.html'
+                     if i + 1 < len(chapters) else 'index.html')
+        prev_title = chapters[i - 1]["title"] if i > 0 else 'Contents'
+        next_title = chapters[i + 1]["title"] if i + 1 < len(chapters) else 'Contents'
+        reader = (
+            f'<div class="preader"><i id="pbar"></i></div>'
+            f'<div class="reader" data-ch="{c["number"]}" data-prev="{prev_href}" data-next="{next_href}">'
+            f'<div class="pnav l"><span>‹</span></div>'
+            f'<div class="pages">{body}</div>'
+            f'<div class="pnav r"><span>›</span></div>'
+            f'</div>'
+            f'<div class="pagebar">'
+            f'<div class="grp"><button id="ppv" onclick="return false">‹ '
+            f'{"prev" if i>0 else "contents"}</button>'
+            f'<span class="cnt" id="pcnt">1 / 1</span>'
+            f'<button id="pnx" onclick="return false">'
+            f'{"next" if i+1<len(chapters) else "contents"} ›</button></div>'
+            f'<div class="grp"><a href="{next_href}">'
+            f'{("next: " + next_title) if i+1<len(chapters) else "back to contents"} →</a></div>'
+            f'</div>')
         (out_dir / f'ch{c["number"]:02d}.html').write_text(
-            shell(f'{c["title"]} — {book["title"]}', page), encoding="utf-8")
+            shell(f'{c["title"]} — {book["title"]}', reader), encoding="utf-8")
     print(f"rendered {len(chapters)} chapter(s) + index → {out_dir}")
 
 
