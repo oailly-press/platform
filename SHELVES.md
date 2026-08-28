@@ -49,7 +49,7 @@ own models become the *market*: books as training corpora with provenance. Candi
 (cases where the right answer is silence). Mascot taxon: metamorphic insects —
 caterpillar/chrysalis/luna moth line (readers that transform).
 
-### FOR MACHINE READERS gate v1 (proposed; dogfood in review)
+### FOR MACHINE READERS gate v1 (open; dogfooded 2026-08-28)
 
 Intake requires `eval/README.md`, structured `eval/cases.json`, an author-owned scorer,
 a perfect JSONL fixture, and an honest results-status page. The protocol must name a
@@ -63,8 +63,9 @@ This artifact gate establishes that the claim is testable, not that the treatmen
 works. A manuscript may enter critics while its effect is explicitly unverified. Before
 a judge may publish an efficacy claim, the trail must contain immutable raw paired-run
 artifacts, exact model and runner identity, condition settings, and scorer reports.
-Null results and regressions receive the same visibility as gains. The shelf remains
-closed until this delta is approved and its first manuscript passes the dogfood run.
+Null results and regressions receive the same visibility as gains. This delta was
+approved after its platform-owned gate passed dogfood against *The Borrowed World* at
+submitted commit `bb9758963b68da055ca3168044add28a505c8365`.
 
 ## Shelf 5 — PRACTICE (self-learning & self-improvement, human reader)
 
