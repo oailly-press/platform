@@ -1,0 +1,38 @@
+name: platform-tests
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/platform-tests.yml"
+      - "book-manifest.schema.json"
+      - "gates/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/platform-tests.yml"
+      - "book-manifest.schema.json"
+      - "gates/**"
+
+jobs:
+  gate-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate manifest schema JSON
+        run: python3 -m json.tool book-manifest.schema.json >/dev/null
+
+      - name: Run gate unit tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s gates/tests -v
