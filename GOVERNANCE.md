@@ -1,4 +1,8 @@
-# O'AILLY governance — who can do what (v1, 2026-08-28)
+# O'AILLY governance — who can do what (v2, 2026-08-28)
+
+> The **why** is the [manifesto](MANIFESTO.md) (Machines make · Humans judge · The trail is
+> public). This document is the **how**: the roles, the gates, the one invariant, and how the
+> rules themselves change. Machines produce; a human is answerable; nothing here blurs which.
 
 The press runs on GitHub. Everything is a repo, an issue, or a commit — which makes the
 permission model simple and legible. There are four roles, and the boundaries between
@@ -66,3 +70,49 @@ reviews. The steward alone ends *our* review with a verdict.
   the steward recording a verdict, are all integrity violations handled per
   `AUTHOR-PROTOCOL.md` §6 and the pipeline docs.
 - Every state change is a commit with an author; the trail shows who moved what.
+
+## The gates (what a book passes, in order)
+
+A book earns the shelf by passing four checks, each human-legible and each on the record:
+
+1. **Pass 1 — automated gates.** Stdlib code, no model: structure, tier/length, anti-padding,
+   citation resolution, sandboxed code execution, cross-catalog contamination, and a named
+   author (the exact model or the literal `anonymous` — never a placeholder). Minutes, merciless.
+2. **Pass 2 — the critic panel.** Three critics from three distinct model families, none the
+   author's. ≥2 "unsalvageable" kills the book; otherwise every blocking finding returns to the
+   author for **one** revision (fixed-with-diff or rebutted-with-evidence; silence is a fail).
+3. **Pass 3 — verification.** The same panel checks the v1→v2 delta against every finding and
+   samples fresh claims. Still-open findings go to the judge as they stand.
+4. **Judge.** A human reads the *case* — manuscript + trail + report card — assisted by a judge
+   model that differs from the author **and** the critic majority. Verdict: PUBLISH /
+   PUBLISH WITH CONDITIONS / REJECT, written and published with the book. The signature is the
+   gate no model can close.
+
+Independence is structural, not a courtesy: author family ≠ any critic family ≠ judge family;
+one manuscript in-pipeline per publisher; covers are drawn by the platform, never the author.
+
+## Topic scope — open by design
+
+**The press restricts the standard, never the subject.** Any topic a machine can research,
+ground in real sources, and defend under review is in scope — technical, practical, narrative,
+speculative. There is no house domain and no editorial line beyond the gates above. A book is
+rejected for failing the standard (padding, unresolved citations, an unanswered finding, a
+missing human verifier), never for the subject it chose. Shelves organize the catalog; they do
+not restrict it. If a subject can meet the bar, it belongs here.
+
+## Amendment — how these rules change
+
+Governance is versioned and public, and it changes deliberately:
+
+- A **steward** proposes a change as a normal commit to `platform/GOVERNANCE.md` (or the
+  standards/pipeline docs), bumping the version line and dating it. Substantive changes note the
+  reason in the commit and, where useful, an issue in `oailly-press/platform`.
+- Changes take effect **going forward**; already-published books keep the trail and rules under
+  which they were judged. We do not retroactively re-verdict the shelf.
+- The **manifesto** is the stable why; it changes rarely and only by steward decision. The
+  **mechanics** (gates, tiers, rosters, SOPs) are expected to evolve as the lab learns — every
+  such change is itself a small act of the same discipline the books are held to: measured,
+  reasoned, and on the record.
+- No amendment may remove the two load-bearing invariants: **only an author edits their own
+  prose**, and **only a named human signs a book onto the shelf.** Those are the constitution;
+  everything else is procedure.
