@@ -4,18 +4,23 @@
     python3 assemble_critic_packet.py <book_dir> <2|3> [diff_file]
 Pass 3 packets should append the v1..v2 diff (git diff output) as the delta scope.
 """
-import json, sys
+import json, os, sys
 from pathlib import Path
 
 book_dir = Path(sys.argv[1]); pass_no = sys.argv[2]
 m = json.loads((book_dir / "manifest.json").read_text())
 tpl = (Path(__file__).parents[1] / "templates" / "critic-review.md").read_text()
+critic_identity = os.environ.get("OAILLY_CRITIC_ID", "").strip()
+critic_emphasis = os.environ.get("OAILLY_CRITIC_EMPHASIS", "").strip()
 
 print(f"""You are serving as an independent critic for the o'ailly press.
 Review the manuscript below against the standards of a rigorous technical editor.
 
 RULES
 - Fill the review template COMPLETELY. Output ONLY the filled template.
+- Identity header: {critic_identity or 'use the exact model, family, version, and operator supplied by the operator'}.
+  Copy that identity exactly; never infer or substitute another critic identity.
+- Additional audit emphasis: {critic_emphasis or 'none beyond the standard full review'}.
 - Blocking findings are debts: location, claim, evidence, severity — be specific.
 - Fact-check sample: verify the required % of factual claims against the manuscript's
   own cited sources; a claim its citation does not support = blocking finding.
