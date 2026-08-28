@@ -17,18 +17,18 @@ import json
 import re
 from pathlib import Path
 
+# Sizing is a TARGET RANGE, not an exact spec — a floor that must be cleared and a target
+# ceiling that only *suggests* the next tier (going over never rejects). Creativity gets room.
+#   (floor: below this rejects · target ceiling: above only warns, None = uncapped · min chapters)
 TIERS = {
-    "pocket": (25_000, 45_000, 6),
-    "standard": (45_000, 90_000, 8),
-    "comprehensive": (90_000, 160_000, 12),
+    "pocket": (20_000, 55_000, 5),
+    "standard": (45_000, 110_000, 7),
+    "comprehensive": (90_000, None, 10),
 }
-HARD_FLOOR = 25_000
-CHAPTER_WORDS = (2_500, 12_000)
-FICTION_CHAPTER_WORDS = (800, 12_000)
-FICTION_NOVEL_FLOOR = 60_000
-FICTION_NOVELLA_RANGE = (25_000, 59_999)
+HARD_FLOOR = 20_000                 # the absolute "is this a book" floor (a bit more forgiving)
+CHAPTER_WORDS = (1_500, 15_000)     # target range: below the floor rejects, above the ceiling only warns
 WORDS_PER_PAGE = 300
-MANIFEST_TOLERANCE = 0.05  # declared vs measured word counts
+MANIFEST_TOLERANCE = 0.12  # declared vs measured word counts — generous, so counts needn't be exact
 MAX_FILE_BYTES = 5 * 1024 * 1024  # per-chapter read cap (resource-exhaustion guard)
 MAX_CHAPTERS = 60  # sanity cap on manifest chapter count
 

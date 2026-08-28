@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from common import (CHAPTER_WORDS, FICTION_CHAPTER_WORDS, HARD_FLOOR,
-                    MANIFEST_TOLERANCE, TIERS, WORDS_PER_PAGE, finding,
-                    read_chapter, split_code_fences, word_count)
+from common import (CHAPTER_WORDS, HARD_FLOOR, MANIFEST_TOLERANCE, TIERS,
+                    WORDS_PER_PAGE, finding, read_chapter, split_code_fences,
+                    word_count)
 
 REQUIRED_TOP = ["manifest_version", "book", "structure", "provenance", "review", "signing"]
 REQUIRED_PROV = ["written_by", "grounded_in", "verified_by", "tools", "disclosure_statement"]
@@ -88,14 +88,13 @@ def check_structure(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
     f = []
     structure = manifest.get("structure", {})
     tier = manifest.get("book", {}).get("tier")
-    is_fiction = manifest.get("book", {}).get("shelf") == "fiction"
-    chapter_range = FICTION_CHAPTER_WORDS if is_fiction else CHAPTER_WORDS
     chapters = structure.get("chapters", [])
 
-    lo, hi, min_ch = TIERS.get(tier, (HARD_FLOOR, 160_000, 6))
+    lo, hi, min_ch = TIERS.get(tier, (HARD_FLOOR, None, 5))
     if len(chapters) < min_ch:
         f.append(finding("structure", "reject", "TOO_FEW_CHAPTERS",
-                         f"tier '{tier}' requires ≥{min_ch} chapters, manifest lists {len(chapters)}",
+                         f"tier '{tier}' needs at least {min_ch} chapters (a floor, not a target — "
+                         f"use as many as the material wants); manifest lists {len(chapters)}",
                          "structure.chapters"))
 
     measured_total = 0
@@ -113,12 +112,14 @@ def check_structure(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
         chapter_words[src] = measured
         measured_total += measured
 
-        if not (chapter_range[0] <= measured <= chapter_range[1]):
-            f.append(finding("structure", "reject", "CHAPTER_LENGTH_OUT_OF_RANGE",
-                             f"measured {measured} words; chapters must be "
-                             f"{chapter_range[0]}–{chapter_range[1]} "
-                             f"for {'FICTION' if is_fiction else 'this shelf'} "
-                             "(code excluded)", loc))
+        if measured < CHAPTER_WORDS[0]:
+            f.append(finding("structure", "reject", "CHAPTER_TOO_SHORT",
+                             f"measured {measured} words; a chapter needs at least {CHAPTER_WORDS[0]} "
+                             f"(code excluded) — below that it reads as a fragment, not a chapter", loc))
+        elif measured > CHAPTER_WORDS[1]:
+            f.append(finding("structure", "warn", "CHAPTER_LONG",
+                             f"measured {measured} words; past the {CHAPTER_WORDS[1]}-word target — fine "
+                             f"if intentional, but consider splitting for the reader", loc))
         declared = ch.get("words")
         if isinstance(declared, int) and declared > 0:
             drift = abs(declared - measured) / declared
@@ -132,10 +133,15 @@ def check_structure(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
         f.append(finding("structure", "reject", "BELOW_HARD_FLOOR",
                          f"measured body total {measured_total} words < hard floor {HARD_FLOOR}: "
                          "this is a report or an article, not a book", "book"))
-    elif tier in TIERS and not (lo <= measured_total <= hi):
-        f.append(finding("structure", "reject", "TIER_LENGTH_MISMATCH",
-                         f"measured {measured_total} words outside tier '{tier}' range {lo}–{hi}; "
-                         "fix the tier or the book", "book.tier"))
+    elif tier in TIERS and measured_total < lo:
+        f.append(finding("structure", "reject", "BELOW_TIER_FLOOR",
+                         f"measured {measured_total} words is under tier '{tier}''s floor of {lo}; "
+                         "either grow the book or drop to a smaller tier", "book.tier"))
+    elif tier in TIERS and hi is not None and measured_total > hi:
+        # over the target ceiling never rejects — it only suggests the next tier up
+        f.append(finding("structure", "warn", "OVER_TIER_TARGET",
+                         f"measured {measured_total} words is past tier '{tier}''s target of ~{hi}; "
+                         "that's allowed (no hard ceiling) — consider labeling it the next tier up", "book.tier"))
 
     for name, tokens in [("frontmatter.md", None), ("provenance.md", PROVENANCE_PAGE_TOKENS),
                          ("backmatter.md", None)]:
@@ -154,11 +160,12 @@ def check_structure(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
     if back.is_file():
         text = back.read_text(encoding="utf-8")
         entries = [l for l in text.splitlines() if l.strip().startswith(("- ", "* "))]
-        needs_index = tier in ("standard", "comprehensive") and not is_fiction
-        if needs_index and len(entries) < 40:
-            f.append(finding("structure", "reject", "INDEX_TOO_THIN",
-                             f"tier '{tier}' requires a glossary/index of ≥40 entries; "
-                             f"found {len(entries)} list entries in backmatter.md",
+        needs_index = tier in ("standard", "comprehensive")
+        if needs_index and len(entries) < 20:
+            f.append(finding("structure", "warn", "INDEX_THIN",
+                             f"tier '{tier}' reads best with a glossary/index; found only "
+                             f"{len(entries)} list entries in backmatter.md. A reference book wants "
+                             f"~20+; a narrative one can skip it — this is a suggestion, not a gate.",
                              "backmatter.md"))
         if "## references" not in text.lower():
             f.append(finding("structure", "reject", "REFERENCES_SECTION_MISSING",

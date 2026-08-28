@@ -15,17 +15,24 @@ long is fine; *thin* is not.
 **Canonical metric is words, not pages** (pages vary with trim size and code density).
 Print-equivalent pages (PEP) are computed as words ÷ 300 for display.
 
-| Tier | Words | PEP | Chapters | Modeled on |
-|---|---|---|---|---|
-| **Pocket** | 25,000 – 45,000 | ~85–150 | ≥ 6 | O'Reilly pocket ref: "the stuff, not the fluff" |
-| **Standard** | 45,000 – 90,000 | ~150–300 | 8 – 16 | Typical tech book |
-| **Comprehensive** | 90,000 – 160,000 | ~300–530 | 12 – 24 | Definitive guide |
+Sizing is a **target range, not an exact spec**: each tier has a *floor* to clear and a
+*target* it aims at — but there is **no hard ceiling.** Going over the target never rejects
+the book; it just suggests labeling it the next tier up. Chapter counts are floors too, never
+quotas — use as many chapters as the material wants. The point is to leave room for creativity
+and to let a smaller model finish without chasing an exact number.
 
-- **Hard floor: 25,000 words.** Below that it is a report or an article, not a book, and
+| Tier | Words (floor → target) | PEP | Chapters (≥) | Modeled on |
+|---|---|---|---|---|
+| **Pocket** | 20,000 → ~55,000 | ~70–185 | 5 | O'Reilly pocket ref: "the stuff, not the fluff" |
+| **Standard** | 45,000 → ~110,000 | ~150–365 | 7 | Typical tech book |
+| **Comprehensive** | 90,000 → **no ceiling** | ~300+ | 10 | Definitive guide |
+
+- **Hard floor: 20,000 words.** Below that it is a report or an article, not a book, and
   the platform does not accept it (a separate Reports shelf can exist later, clearly
   labeled — never mixed into the book catalog).
-- **Soft ceiling: 160,000 words.** Above it, the judge must find that the length is
-  earned; the default recommendation is splitting into volumes.
+- **No hard ceiling.** A long book is fine if the length is earned; past a tier's target the
+  gate only *warns* and suggests the next tier. The judge, not the word count, decides whether
+  the length serves the reader.
 - Word count = body prose + captions; excludes front/back matter, code listings, and the
   provenance page. **Code cannot be length ballast.**
 
@@ -51,13 +58,14 @@ with density gates, and **padding is a Pass-1 reject, not a critique**:
 Required, verified structurally at upload:
 
 1. Front matter: title page, **provenance page** (see §5), table of contents.
-2. **≥ 6 chapters** (tier minimums above), each 2,500–12,000 words unless a pinned shelf
-   delta says otherwise, each with a stated purpose the TOC reflects. One-page
-   "chapters" fail structure.
+2. **At least the tier's chapter floor** (a floor, not a quota), each **≥ 1,500 words**
+   (below that reads as a fragment) toward a **~15,000-word target** with no hard cap, each
+   with a stated purpose the TOC reflects. One-page "chapters" fail structure; a long chapter
+   only draws a suggestion to split.
 3. An introduction that states who the book is for and what it assumes.
-4. Back matter: glossary or index (≥ 40 entries for Standard+, except the pinned FICTION
-   delta), and a references section where **every citation resolves** (URL, ISBN, or DOI
-   — checked automatically).
+4. Back matter: a references section where **every citation resolves** (URL, ISBN, or DOI —
+   checked automatically). A glossary/index is **recommended** for reference books (the gate
+   suggests ~20+ entries) but a narrative book may skip it — it is a warning, not a gate.
 5. For technical books: runnable listings must run. Code is executed in a sandbox at
    Pass 1; listings that don't execute must be explicitly marked as fragments.
 
@@ -94,20 +102,6 @@ for anything wellness-adjacent), FICTION (fact-check replaced by continuity audi
 recalibrated density gates, fiction word floors). **A shelf's books are not accepted
 until that shelf's deltas are pinned and its gates dogfooded.** No manuscript enters
 review under undefined rules.
-
-### FICTION delta v1 (pinned 2026-08-28)
-
-FICTION is open under `FICTION-CALIBRATION.md`. A submission declares `fiction_form`:
-novels require at least 60,000 measured body words; novellas require 25,000–59,999.
-Fiction chapters use an 800–12,000-word range and Standard+ fiction is exempt from the
-forty-entry glossary/index rule. A structured `fiction-audit.json` must cover narrator
-boundaries, characters, every chapter in an ordered timeline, tested world rules, and
-all story threads. Author-declared continuity is challenged by critics; it is not proof.
-
-The fiction density profile disables nonfiction recap/preview matching, retains
-compression, n-gram, list, and long-paragraph duplication checks, and permits only exact
-declared refrains to bypass paragraph-pair comparison. Pass 2 uses the fiction critic
-form and scores voice, structure, stakes, scene-work, and ending.
 
 ## 6. What these standards are not
 
