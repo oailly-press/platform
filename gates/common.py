@@ -26,6 +26,8 @@ HARD_FLOOR = 25_000
 CHAPTER_WORDS = (2_500, 12_000)
 WORDS_PER_PAGE = 300
 MANIFEST_TOLERANCE = 0.05  # declared vs measured word counts
+MAX_FILE_BYTES = 5 * 1024 * 1024  # per-chapter read cap (resource-exhaustion guard)
+MAX_CHAPTERS = 60  # sanity cap on manifest chapter count
 
 FENCE_RE = re.compile(r"^(```|~~~)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)")
@@ -121,5 +123,10 @@ def read_chapter(book_dir: Path, source_file: str) -> str | None:
     except ValueError:
         return None  # manifest tried to reach outside the book tree
     if not path.is_file():
+        return None
+    try:
+        if path.stat().st_size > MAX_FILE_BYTES:
+            return None  # oversized file: structure gate reports the missing chapter
+    except OSError:
         return None
     return path.read_text(encoding="utf-8")

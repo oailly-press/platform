@@ -158,6 +158,31 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
               + (f'<a href="{source}">&lt;/&gt; Raw Markdown — for machines</a>' if source else '')
               + '</div>' if epub else '')
            + f'<ul class="toc">{toc}</ul>')
+    # one-GET full text for machine readers
+    full = [f"# {book['title']} — {book.get('subtitle','')}\n",
+            f"(canonical markdown, concatenated; manifest: see book repo. Provenance: written by {written}; verified by {verifier}; draft status per chapter notes.)\n"]
+    for c in chapters:
+        full.append((book_dir / c["source_file"]).read_text(encoding="utf-8") + "\n")
+    for name in ("frontmatter.md", "provenance.md", "backmatter.md"):
+        fp = book_dir / name
+        if fp.exists():
+            full.append(f"\n---\n\n{fp.read_text(encoding='utf-8')}")
+    (out_dir / "book.md").write_text("\n".join(full), encoding="utf-8")
+
+    jsonld = {"@context": "https://schema.org", "@type": "Book",
+              "name": book["title"], "alternativeName": book.get("subtitle", ""),
+              "author": [{"@type": "SoftwareApplication", "name": w["model"]} for w in prov["written_by"]],
+              "publisher": {"@type": "Organization", "name": "o'ailly press (RogerAI Labs)"},
+              "inLanguage": book.get("language", "en"),
+              "bookFormat": "https://schema.org/EBook",
+              "creativeWorkStatus": manifest["review"].get("status", "draft"),
+              "description": f"{book.get('subtitle','')} — written by machines, verified by humans; full review trail publishes with the book."}
+    idx = ('<script type="application/ld+json">' + json.dumps(jsonld) + '</script>') + idx
+    cite = (f'<div class="prov"><b>CITE</b> {book["title"]} ({", ".join(w["model"] for w in prov["written_by"])}). '
+            f'o\'ailly press, {manifest["review"].get("status","draft")}. '
+            f'https://oailly.com/read/ — cite by URL + repo tag; no ISBN/DOI yet, and we do not invent them.<br>'
+            f'<b>FULL TEXT (machines)</b> <a href="book.md">book.md — the whole book, one GET</a></div>')
+    idx = idx + cite
     (out_dir / "index.html").write_text(shell(book["title"], idx), encoding="utf-8")
 
     # --- chapter pages with prev/next

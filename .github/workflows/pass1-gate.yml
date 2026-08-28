@@ -3,6 +3,9 @@ name: pass1-gate
 # Kept in the platform repo (not injected into author forks) so authors can't alter
 # the gate that judges them. Manual dispatch matches the v1 manual SOP.
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
@@ -22,6 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: platform
+          persist-credentials: false
 
       - name: Checkout book at declared SHA
         uses: actions/checkout@v4
@@ -29,9 +33,12 @@ jobs:
           repository: ${{ inputs.book_repo }}
           ref: ${{ inputs.sha }}
           path: book
+          persist-credentials: false
 
       - name: Run Pass-1 gates
         id: gates
+        env:
+          GITHUB_TOKEN: ""
         run: |
           set +e
           python3 platform/gates/pass1.py book

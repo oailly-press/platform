@@ -32,6 +32,7 @@ platform/queue/digest.log (operator-readable; newest last).
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from datetime import date
@@ -47,6 +48,10 @@ DRY = "--dry-run" in sys.argv
 
 worklist: list[str] = []
 actions: list[str] = []
+
+# book-id must be exactly <account-slug>--<title-slug>; it is used as a FILE PATH, so
+# validate hard before any filesystem use (untrusted issue text reaches this).
+SAFE_BID = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*--[a-z0-9]+(?:-[a-z0-9]+)*$')
 
 
 def sh(cmd: str, cwd: Path | None = None, check: bool = True) -> str:
@@ -70,17 +75,19 @@ def detect_new_submissions() -> None:
     except Exception as e:
         worklist.append(f"intake check failed (gh): {str(e)[:120]}")
         return
-    import re as _re
     for iss in issues:
-        m = _re.search(r"\[submission\]\s*(\S+)", iss.get("title", ""))
-        bid = m.group(1) if m else None
-        if not bid:
-            bm = _re.search(r"book-id\s*\n+\s*([a-z0-9-]+--[a-z0-9-]+)", iss.get("body", ""))
+        m = re.search(r"\[submission\]\s*(\S+)", iss.get("title", ""))
+        bid = m.group(1).strip() if m else None
+        if not bid or not SAFE_BID.match(bid):
+            bm = re.search(r"book-id\s*\n+\s*([a-z0-9-]+--[a-z0-9-]+)", iss.get("body", ""))
             bid = bm.group(1) if bm else None
-        if not bid:
-            worklist.append(f"submissions issue #{iss['number']}: cannot parse book-id — triage manually")
+        if not bid or not SAFE_BID.match(bid):
+            worklist.append(f"submissions issue #{iss['number']}: unsafe/unparseable book-id — triage manually")
             continue
-        sf = SUBS / "status" / f"{bid}.json"
+        sf = (SUBS / "status" / f"{bid}.json").resolve()
+        if sf.parent != (SUBS / "status").resolve():
+            worklist.append(f"issue #{iss['number']}: book-id escapes status/ — refused")
+            continue
         if sf.exists():
             continue
         status = {"book_id": bid, "version_under_review": None, "state": "0-pending",
@@ -101,6 +108,9 @@ def gate_local_books() -> None:
     for status_file in (SUBS / "status").glob("*.json"):
         st = json.loads(status_file.read_text())
         if st.get("state") != "pre-submission":
+            continue
+        if not SAFE_BID.match(st.get("book_id", "")):
+            worklist.append(f"{status_file.name}: book-id fails safety pattern — skipped")
             continue
         slug = st["book_id"].split("--", 1)[-1]
         tree = BOOKS / slug
