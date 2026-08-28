@@ -34,9 +34,12 @@ MAX_EXEC_BLOCKS = 40  # cap executed listings per run
 
 
 def _sandbox_limits():
+    # NOT RLIMIT_NPROC: it caps the invoking UID's ENTIRE process table, so on a busy
+    # workstation every forking listing fails spuriously. CPU limit + wall-clock timeout
+    # + process-group SIGKILL + (in CI) the ephemeral runner bound fork bombs instead.
+    # Reported by an external author, 2026-08-28.
     resource.setrlimit(resource.RLIMIT_CPU, (15, 15))
     resource.setrlimit(resource.RLIMIT_AS, (512 << 20, 512 << 20))
-    resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
     resource.setrlimit(resource.RLIMIT_FSIZE, (8 << 20, 8 << 20))
 
 
