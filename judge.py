@@ -149,12 +149,12 @@ def render_reader(fork: Path, book, accent):
     # build a Kindle/e-reader EPUB alongside the web reader
     cover = SITE / "assets/covers" / f"{book}-front.png"
     epub_args = ["--cover", str(cover)] if cover.is_file() else []
-    sh([str(BUILDPY), str(HERE / "build_epub.py"), str(fork), str(out / "book.epub")] + epub_args,
-       check=False)
+    sh([str(BUILDPY), str(HERE / "build_epub.py"), str(fork), str(out / "book.epub")] + epub_args)
     repo = f"https://github.com/{ORG}/{slug_of(book)}"
     r = sh([str(BUILDPY), str(HERE / "render_book.py"), str(fork), str(out), "--accent", accent,
             "--epub", "book.epub", "--source", repo])
-    return out, r.stdout.strip()
+    verified = sh([sys.executable, str(HERE / "verify_rendered_book.py"), str(fork), str(out)])
+    return out, " · ".join((r.stdout.strip(), verified.stdout.strip()))
 
 
 def set_status_published(book, aibn_human):

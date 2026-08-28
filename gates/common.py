@@ -27,6 +27,11 @@ TIERS = {
 }
 HARD_FLOOR = 20_000                 # the absolute "is this a book" floor (a bit more forgiving)
 CHAPTER_WORDS = (1_500, 15_000)     # target range: below the floor rejects, above the ceiling only warns
+# FICTION keeps its separately calibrated form labels and shorter scene/chapter floor.
+# The upper value is a soft target, matching the founder's flexible-sizing directive.
+FICTION_CHAPTER_WORDS = (800, 15_000)
+FICTION_NOVEL_FLOOR = 60_000
+FICTION_NOVELLA_RANGE = (20_000, 59_999)
 WORDS_PER_PAGE = 300
 MANIFEST_TOLERANCE = 0.12  # declared vs measured word counts — generous, so counts needn't be exact
 MAX_FILE_BYTES = 5 * 1024 * 1024  # per-chapter read cap (resource-exhaustion guard)

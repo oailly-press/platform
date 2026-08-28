@@ -1,5 +1,43 @@
 # Platform project log
 
+## 2026-08-28 — Flexible sizing reconciled with FICTION v1
+
+- Preserved the founder-directed global sizing change: 20,000-word book floor, flexible
+  tier targets, 1,500-word general chapter floor, 15,000-word soft chapter target, and
+  no hard upper ceiling.
+- Restored FICTION constants inadvertently removed by that change while still imported
+  by the shelf gate. Novels retain their explicit 60,000-word form label; novellas now
+  span 20,000–59,999 in line with the global floor.
+- Preserved FICTION's calibrated 800-word chapter floor and adopted the global 15,000
+  soft target. Long chapters warn rather than reject.
+- Reconciled the manifest schema with the executable gate: 20,000 body-word minimum,
+  five-chapter generic minimum, 800-word schema floor for FICTION compatibility, and no
+  hard per-chapter maximum.
+- Restored the FICTION delta in `BOOK-STANDARDS.md` and added a 20,000-word novella
+  regression case so future sizing changes cannot silently disable the shelf.
+- `gates-v3` captured the intermediate broken import and must not judge submissions.
+  The corrected flexible-sizing gate is pinned as `gates-v4`; the authoritative CI
+  workflow names that immutable tag.
+
+## 2026-08-28 — Pre-publication artifact verification
+
+- Added `verify_rendered_book.py`, a stdlib release gate that runs after EPUB and web
+  rendering but before publication status or catalog mutation.
+- The verifier checks required web artifacts, relative link targets, the complete
+  prev/next reading chain, ordered TOC entries, and lossless ordered inclusion of every
+  canonical source section in `book.md`.
+- EPUB checks cover the first uncompressed mimetype entry, ZIP integrity, XML parsing,
+  container rootfile, manifest targets, exact canonical spine, spine references, and
+  navigation targets.
+- The judge release train now treats EPUB build, web rendering, and release verification
+  as hard failures. A broken artifact can no longer be followed by a `5-published`
+  status or catalog update.
+- Added clean-release, broken-web-link, and broken-EPUB-spine regression cases. The
+  platform suite now contains 20 passing tests.
+- A fresh combined build of *The City That Remembered Too Much* passed release
+  verification: 22 EPUB reading documents, 23 web files including the EPUB, complete
+  canonical source, and no unresolved internal target.
+
 ## 2026-08-28 — Complete cover-to-cover web rendering
 
 - Extended the production web reader to render canonical `provenance.md`,

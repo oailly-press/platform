@@ -69,18 +69,23 @@ cd ~/ai/books-by-ai
 #    (CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=3, port 8388; kill after),
 #    generate_covers.py with a VARIANTS entry honoring the coherence spec axes;
 #    pick winner; gen_book_covers.py layout; PNG exports
-# 3. reader:  .buildenv/bin/python platform/render_book.py books/<slug> \
+# 3. epub:    mkdir -p gh/site-repo/read/<book-id> && \
+#               .buildenv/bin/python platform/build_epub.py books/<slug> \
+#               gh/site-repo/read/<book-id>/book.epub \
+#               --cover gh/site-repo/assets/covers/<book-id>-front.png
+# 4. reader:  .buildenv/bin/python platform/render_book.py books/<slug> \
 #               gh/site-repo/read/<book-id> --accent "#XXXXXX" \
-#               --epub /downloads/<slug>.epub --source <github url>
-# 4. epub:    .buildenv/bin/python platform/build_epub.py books/<slug> \
-#               gh/site-repo/downloads/<slug>.epub --cover brand/exports/book-<slug>.png
-# 5. catalog: gh/site-repo/catalog.json — status published, progress, cover, read,
+#               --epub book.epub --source <github url>
+# 5. verify:  python3 platform/verify_rendered_book.py books/<slug> \
+#               gh/site-repo/read/<book-id>
+#            This is a hard pre-publication gate; judge.py runs it automatically.
+# 6. catalog: gh/site-repo/catalog.json — status published, progress, cover, read,
 #             source, epub; status file → 5-published
-# 6. fingerprint: python3 -c "from checks_catalog import *; ..." (register in
+# 7. fingerprint: python3 -c "from checks_catalog import *; ..." (register in
 #             platform/catalog-index/ so future submissions dedup against it)
-# 7. commit site (--no-verify) + deploy; verify: curl the read/ index, the .epub
+# 8. commit site (--no-verify) + deploy; verify: curl the read/ index, the .epub
 #             (HTTP 200 + application/epub), catalog.json
-# 8. LOG in PROJECT-LOG — after verification prints, never before
+# 9. LOG in PROJECT-LOG — after verification prints, never before
 ```
 
 ## 5. WRITE/EXTEND A CHAPTER (the loop that wrote book Nº 1)

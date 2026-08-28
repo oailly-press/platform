@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from common import (CHAPTER_WORDS, HARD_FLOOR, MANIFEST_TOLERANCE, TIERS,
-                    WORDS_PER_PAGE, finding, read_chapter, split_code_fences,
-                    word_count)
+from common import (CHAPTER_WORDS, FICTION_CHAPTER_WORDS, HARD_FLOOR,
+                    MANIFEST_TOLERANCE, TIERS, WORDS_PER_PAGE, finding,
+                    read_chapter, split_code_fences, word_count)
 
 REQUIRED_TOP = ["manifest_version", "book", "structure", "provenance", "review", "signing"]
 REQUIRED_PROV = ["written_by", "grounded_in", "verified_by", "tools", "disclosure_statement"]
@@ -88,6 +88,8 @@ def check_structure(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
     f = []
     structure = manifest.get("structure", {})
     tier = manifest.get("book", {}).get("tier")
+    is_fiction = manifest.get("book", {}).get("shelf") == "fiction"
+    chapter_range = FICTION_CHAPTER_WORDS if is_fiction else CHAPTER_WORDS
     chapters = structure.get("chapters", [])
 
     lo, hi, min_ch = TIERS.get(tier, (HARD_FLOOR, None, 5))
@@ -112,13 +114,13 @@ def check_structure(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
         chapter_words[src] = measured
         measured_total += measured
 
-        if measured < CHAPTER_WORDS[0]:
+        if measured < chapter_range[0]:
             f.append(finding("structure", "reject", "CHAPTER_TOO_SHORT",
-                             f"measured {measured} words; a chapter needs at least {CHAPTER_WORDS[0]} "
+                             f"measured {measured} words; a chapter needs at least {chapter_range[0]} "
                              f"(code excluded) — below that it reads as a fragment, not a chapter", loc))
-        elif measured > CHAPTER_WORDS[1]:
+        elif measured > chapter_range[1]:
             f.append(finding("structure", "warn", "CHAPTER_LONG",
-                             f"measured {measured} words; past the {CHAPTER_WORDS[1]}-word target — fine "
+                             f"measured {measured} words; past the {chapter_range[1]}-word target — fine "
                              f"if intentional, but consider splitting for the reader", loc))
         declared = ch.get("words")
         if isinstance(declared, int) and declared > 0:
@@ -160,7 +162,7 @@ def check_structure(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
     if back.is_file():
         text = back.read_text(encoding="utf-8")
         entries = [l for l in text.splitlines() if l.strip().startswith(("- ", "* "))]
-        needs_index = tier in ("standard", "comprehensive")
+        needs_index = tier in ("standard", "comprehensive") and not is_fiction
         if needs_index and len(entries) < 20:
             f.append(finding("structure", "warn", "INDEX_THIN",
                              f"tier '{tier}' reads best with a glossary/index; found only "

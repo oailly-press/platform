@@ -88,8 +88,8 @@ unresolved threads. Narrative density uses a calibrated fiction profile: nonfict
 scaffold matching is off, while compression, n-grams, list inflation, and long-paragraph
 duplication remain active. Exact declared refrains receive only a narrow duplicate-pair
 exemption. Critics score voice, structure, stakes, scene-work, and ending. Novels require
-at least 60,000 measured body words; novellas are labeled at 25,000–59,999; fiction
-chapters may run 800–12,000 words.
+at least 60,000 measured body words; novellas are labeled at 20,000–59,999. Fiction
+chapters require 800 words and use 15,000 as a soft split target, not a ceiling.
 
 The complete calibration, controls, thresholds, and limits are pinned in
 `FICTION-CALIBRATION.md`. Gate v1 passed end-to-end dogfood against *The City That

@@ -113,6 +113,15 @@ class FictionShelfTests(unittest.TestCase):
         self.assertEqual("PASS", metrics["continuity_audit"])
         self.assertEqual(8, metrics["chapters_covered"])
 
+    def test_manifest_schema_matches_flexible_sizing_and_fiction_floor(self):
+        schema = json.loads((PLATFORM / "book-manifest.schema.json").read_text())
+        structure = schema["properties"]["structure"]["properties"]
+        self.assertEqual(20_000, structure["word_count_body"]["minimum"])
+        self.assertEqual(5, structure["chapters"]["minItems"])
+        chapter_words = structure["chapters"]["items"]["properties"]["words"]
+        self.assertEqual(800, chapter_words["minimum"])
+        self.assertNotIn("maximum", chapter_words)
+
     def test_novel_below_sixty_thousand_rejects(self):
         (self.book / "ch08.md").write_text(
             "# Chapter 8\n\n" + "story " * 7_000, encoding="utf-8"
@@ -157,16 +166,46 @@ class FictionShelfTests(unittest.TestCase):
             )
         fiction_findings, _ = check_structure(self.manifest, self.book)
         self.assertNotIn(
-            "CHAPTER_LENGTH_OUT_OF_RANGE",
+            "CHAPTER_TOO_SHORT",
             {item["code"] for item in fiction_findings},
         )
         nonfiction = json.loads(json.dumps(self.manifest))
         nonfiction["book"]["shelf"] = "industrial"
         nonfiction_findings, _ = check_structure(nonfiction, self.book)
         self.assertIn(
-            "CHAPTER_LENGTH_OUT_OF_RANGE",
+            "CHAPTER_TOO_SHORT",
             {item["code"] for item in nonfiction_findings},
         )
+
+    def test_narrative_fiction_does_not_receive_index_warning(self):
+        (self.book / "frontmatter.md").write_text("# Front Matter", encoding="utf-8")
+        (self.book / "provenance.md").write_text(
+            "WRITTEN BY test\n\nVERIFIED BY human", encoding="utf-8"
+        )
+        (self.book / "backmatter.md").write_text(
+            "# Back Matter\n\n## References\n\nNone.", encoding="utf-8"
+        )
+        fiction_findings, _ = check_structure(self.manifest, self.book)
+        self.assertNotIn("INDEX_THIN", {item["code"] for item in fiction_findings})
+        nonfiction = json.loads(json.dumps(self.manifest))
+        nonfiction["book"]["shelf"] = "industrial"
+        nonfiction_findings, _ = check_structure(nonfiction, self.book)
+        self.assertIn("INDEX_THIN", {item["code"] for item in nonfiction_findings})
+
+    def test_twenty_thousand_word_novella_passes_form_floor(self):
+        self.manifest["book"]["fiction_form"] = "novella"
+        for number in range(1, 9):
+            (self.book / f"ch{number:02d}.md").write_text(
+                f"# Chapter {number}\n\n" + "story " * 2_500,
+                encoding="utf-8",
+            )
+        path = self.book / "fiction-audit.json"
+        audit = json.loads(path.read_text(encoding="utf-8"))
+        audit["form"] = "novella"
+        path.write_text(json.dumps(audit), encoding="utf-8")
+        findings, metrics = check_shelf(self.manifest, self.book)
+        self.assertEqual([], findings)
+        self.assertEqual(20_000, metrics["measured_words"])
 
     def test_fiction_disables_nonfiction_scaffold_detector(self):
         text = "\n\n".join(

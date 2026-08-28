@@ -10,8 +10,9 @@ the critic/judge separation, and the public review trail remain unchanged.
 
 A FICTION submission declares `book.shelf: fiction` and `book.fiction_form` as either
 `novel` or `novella`. A novel contains at least 60,000 measured body words. A novella
-contains 25,000–59,999. Fiction chapters may contain 800–12,000 words; Standard and
-Comprehensive fiction does not need a forty-entry glossary or index.
+contains 20,000–59,999, following the platform-wide book floor adopted on 2026-08-28.
+Fiction chapters require at least 800 words; 15,000 is a soft split target rather than a
+hard ceiling. Narrative fiction does not need a glossary or index.
 
 Every submission includes `fiction-audit.json` version 1.0. Platform-owned code checks
 that it contains:

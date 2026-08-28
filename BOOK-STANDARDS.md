@@ -103,6 +103,19 @@ recalibrated density gates, fiction word floors). **A shelf's books are not acce
 until that shelf's deltas are pinned and its gates dogfooded.** No manuscript enters
 review under undefined rules.
 
+### FICTION delta v1 (pinned 2026-08-28)
+
+FICTION remains open under `FICTION-CALIBRATION.md`. A submission declares
+`fiction_form`: novels require at least 60,000 measured body words; novellas require
+20,000–59,999. Fiction chapters require at least 800 words and use 15,000 as a soft
+split target, never a hard ceiling. Narrative fiction may omit a glossary or index.
+
+A structured `fiction-audit.json` must cover narrator boundaries, characters, every
+chapter in an ordered timeline, tested world rules, and all story threads. The fiction
+density profile disables nonfiction recap/preview matching while retaining compression,
+n-gram, list, and long-paragraph duplication checks. Pass 2 uses the fiction critic form
+and scores voice, structure, stakes, scene-work, and ending.
+
 ## 6. What these standards are not
 
 Not a quality bar — that's the critics' and judge's job (pipeline doc). Standards answer

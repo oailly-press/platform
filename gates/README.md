@@ -10,6 +10,10 @@ python3 pass1.py <book_source_dir> [--offline] [--no-exec] [--index DIR]
 Exit 0 = PASS (warnings allowed) · 1 = REJECT · 2 = couldn't run. Writes
 `<book_dir>/pass1-report.json` (machine-readable findings + measured metrics).
 
+Authoritative submission CI currently runs immutable tag `gates-v4` (flexible global
+sizing with FICTION v1 restored). `gates-v3` is superseded because its sizing merge
+removed constants still required by the shelf dispatcher.
+
 ## Book source tree convention
 
 `manifest.json` (per `../book-manifest.schema.json`) · chapter `.md` files listed in the
@@ -37,7 +41,8 @@ VERIFIED BY) · `backmatter.md` (glossary/index + `## References`).
   and a perfect fixture independently scored by platform-owned code. The intake gate
   never executes an author's evaluation program. FICTION requires a declared novel or
   novella form and validates the structured continuity audit across narrator rules,
-  characters, every chapter, world rules, and story threads.
+  characters, every chapter, world rules, and story threads. Novels retain the pinned
+  60,000-word form floor; novellas follow the 20,000-word platform book floor.
 - `checks_catalog.py` — cross-catalog contamination: sampled shingle fingerprints,
   Jaccard vs every published book (reject ≥15%, warn ≥5%). `register_fingerprint()` is
   called at publication to add a book to `../catalog-index/`.
