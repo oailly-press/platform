@@ -9,6 +9,10 @@ tree and writes <book_dir>/pass1-report.json. Exit 0 = PASS (warnings allowed),
 exit 1 = REJECT, exit 2 = could not run (bad invocation / unreadable manifest).
 
 No judgment calls live here: a book may retry Pass 1 as often as needed.
+
+SECURITY: code listings EXECUTE. On a book tree you did not author, run either in the
+CI sandbox (pass1-gate workflow) or locally with --no-exec. Never bare pass1 on an
+untrusted repo from an operator machine.
 """
 
 from __future__ import annotations

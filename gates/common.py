@@ -115,7 +115,11 @@ def shingles(text: str, k: int = 8) -> set[str]:
 
 
 def read_chapter(book_dir: Path, source_file: str) -> str | None:
-    path = book_dir / source_file
+    path = (book_dir / source_file).resolve()
+    try:
+        path.relative_to(book_dir.resolve())
+    except ValueError:
+        return None  # manifest tried to reach outside the book tree
     if not path.is_file():
         return None
     return path.read_text(encoding="utf-8")

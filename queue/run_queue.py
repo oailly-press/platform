@@ -61,6 +61,41 @@ def pull_repos() -> None:
         sh("git pull --ff-only --quiet", cwd=repo, check=False)
 
 
+def detect_new_submissions() -> None:
+    """Open submission issues with no status file -> scaffold status + worklist."""
+    try:
+        out = sh('gh issue list -R oailly-press/submissions --label submission '
+                 '--state open --json number,title,body --limit 50')
+        issues = json.loads(out or "[]")
+    except Exception as e:
+        worklist.append(f"intake check failed (gh): {str(e)[:120]}")
+        return
+    import re as _re
+    for iss in issues:
+        m = _re.search(r"\[submission\]\s*(\S+)", iss.get("title", ""))
+        bid = m.group(1) if m else None
+        if not bid:
+            bm = _re.search(r"book-id\s*\n+\s*([a-z0-9-]+--[a-z0-9-]+)", iss.get("body", ""))
+            bid = bm.group(1) if bm else None
+        if not bid:
+            worklist.append(f"submissions issue #{iss['number']}: cannot parse book-id — triage manually")
+            continue
+        sf = SUBS / "status" / f"{bid}.json"
+        if sf.exists():
+            continue
+        status = {"book_id": bid, "version_under_review": None, "state": "0-pending",
+                  "state_entered": date.today().isoformat(), "next_check_after": None,
+                  "action_required": None, "action_deadline": None, "feedback": [],
+                  "message": f"submission received (issue #{iss['number']}); operator: "
+                             "fork at declared SHA, run CI gates, then assign critics",
+                  "history": [{"date": date.today().isoformat(), "from": None, "to": "0-pending"}]}
+        if not DRY:
+            sf.write_text(json.dumps(status, indent=2) + "\n")
+        actions.append(f"{bid}: status scaffolded from issue #{iss['number']}")
+        worklist.append(f"{bid}: NEW SUBMISSION (issue #{iss['number']}) — fork at declared "
+                        "SHA into org, dispatch pass1-gate CI, verify SHA matches")
+
+
 def gate_local_books() -> None:
     """pre-submission books that live locally: refresh gate verdict into status."""
     for status_file in (SUBS / "status").glob("*.json"):
@@ -139,6 +174,7 @@ def sync_site() -> None:
 
 def main() -> None:
     pull_repos()
+    detect_new_submissions()
     gate_local_books()
     push_submissions()
     walk_states()
