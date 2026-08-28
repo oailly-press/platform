@@ -241,14 +241,16 @@ def cmd_sign(a):
     print("[4/6] status → 5-published (source + mirror)")
     update_catalog(book, rec["aibn_human"])
     update_registry_assigned(book)
-    print("[5/6] catalog + AIBN registry updated")
+    # social share card (needs catalog cover + registry AIBN, both set above)
+    sh([str(BUILDPY), str(ROOT / "brand/covers/og_card.py"), book], check=False)
+    print("[5/6] catalog + AIBN registry + social card updated")
 
     # commit everything + deploy
     sh(["git", "-C", str(SUBS), "add", "status/"], check=False)
     sh(["git", "-C", str(SUBS), "commit", "--no-verify", "-q", "-m",
         f"publish: {book} — signed by {verifier}"], check=False)
     sh(["git", "-C", str(SUBS), "push", "--no-verify", "-q", "origin", "main"], check=False)
-    sh(["git", "-C", str(SITE), "add", "read/", "status/", "catalog.json", "aibn/"], check=False)
+    sh(["git", "-C", str(SITE), "add", "read/", "status/", "catalog.json", "aibn/", "assets/og/", "book/"], check=False)
     sh(["git", "-C", str(SITE), "commit", "--no-verify", "-q", "-m",
         f"publish {book}: cover-to-cover reader, catalog, AIBN registry — verified by {verifier}"], check=False)
     sh(["git", "-C", str(SITE), "push", "--no-verify", "-q", "origin", "main"], check=False)
