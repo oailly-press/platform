@@ -251,13 +251,53 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     back_cover = f"/assets/covers/{book_id}-back.png"
     has_covers = (SITE_ASSETS / f"{book_id}-front.png").is_file() if SITE_ASSETS else False
 
+    canonical_sections = []
+    for source_name, output_name, label in (
+        ("provenance.md", "provenance.html", "Provenance"),
+        ("frontmatter.md", "frontmatter.html", "Front Matter"),
+    ):
+        source_path = book_dir / source_name
+        if source_path.exists():
+            canonical_sections.append({
+                "source": source_path,
+                "output": output_name,
+                "title": label,
+                "key": output_name.removesuffix(".html"),
+            })
+    for chapter in chapters:
+        canonical_sections.append({
+            "source": book_dir / chapter["source_file"],
+            "output": f'ch{chapter["number"]:02d}.html',
+            "title": chapter["title"],
+            "key": f'ch{chapter["number"]:02d}',
+            "chapter": chapter,
+        })
+    backmatter_path = book_dir / "backmatter.md"
+    if backmatter_path.exists():
+        canonical_sections.append({
+            "source": backmatter_path,
+            "output": "backmatter.html",
+            "title": "Back Matter",
+            "key": "backmatter",
+        })
+    first_page = canonical_sections[0]["output"] if canonical_sections else "index.html"
+
     # --- title page: front cover + cover meta + provenance + TOC
     written = ", ".join(f"{m['model']}" for m in prov["written_by"])
     verifier = prov["verified_by"].get("name") or "—"
-    toc = "\n".join(
+    toc_prefix = "\n".join(
+        f'<li><a href="{section["output"]}"><span class="n">§</span>'
+        f'{section["title"]}</a></li>'
+        for section in canonical_sections
+        if section["key"] in {"provenance", "frontmatter"}
+    )
+    toc_chapters = "\n".join(
         f'<li><a href="ch{c["number"]:02d}.html"><span class="n">{c["number"]:02d}</span>'
         f'{c["title"]}</a></li>' for c in chapters)
-    cover_open = (f'<a class="coverpage" href="ch01.html" title="open the book">'
+    toc_suffix = ('<li><a href="backmatter.html"><span class="n">§</span>'
+                  'Back Matter</a></li>' if backmatter_path.exists() else '')
+    toc = "\n".join(part for part in (toc_prefix, toc_chapters, toc_suffix) if part)
+    cover_open = (f'<a class="coverpage" href="{first_page}" title="open the book">'
                   f'<img src="{front_cover}" alt="{book["title"]} — front cover" '
                   f'loading="eager"><span class="opencue">open the book →</span></a>'
                   if has_covers else '')
@@ -284,12 +324,14 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     # one-GET full text for machine readers
     full = [f"# {book['title']} — {book.get('subtitle','')}\n",
             f"(canonical markdown, concatenated; manifest: see book repo. Provenance: written by {written}; verified by {verifier}; draft status per chapter notes.)\n"]
-    for c in chapters:
-        full.append((book_dir / c["source_file"]).read_text(encoding="utf-8") + "\n")
-    for name in ("frontmatter.md", "provenance.md", "backmatter.md"):
+    for name in ("provenance.md", "frontmatter.md"):
         fp = book_dir / name
         if fp.exists():
             full.append(f"\n---\n\n{fp.read_text(encoding='utf-8')}")
+    for c in chapters:
+        full.append(f"\n---\n\n{(book_dir / c['source_file']).read_text(encoding='utf-8')}\n")
+    if backmatter_path.exists():
+        full.append(f"\n---\n\n{backmatter_path.read_text(encoding='utf-8')}")
     (out_dir / "book.md").write_text("\n".join(full), encoding="utf-8")
 
     jsonld = {"@context": "https://schema.org", "@type": "Book",
@@ -312,19 +354,18 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     idx = idx + cite
     (out_dir / "index.html").write_text(shell(book["title"], idx), encoding="utf-8")
 
-    # --- chapter pages: paginated reader (flip page by page, like a real book) ---
-    for i, c in enumerate(chapters):
-        text = (book_dir / c["source_file"]).read_text(encoding="utf-8")
-        body = md(text)
-        last = i + 1 >= len(chapters)
+    # --- canonical pages: provenance → front matter → chapters → back matter ---
+    for i, section in enumerate(canonical_sections):
+        body = md(section["source"].read_text(encoding="utf-8"))
+        last = i + 1 >= len(canonical_sections)
         end_href = 'back-cover.html' if has_covers else 'index.html'
-        prev_href = f'ch{chapters[i-1]["number"]:02d}.html' if i > 0 else 'index.html#end'
-        next_href = end_href if last else f'ch{chapters[i+1]["number"]:02d}.html'
-        prev_title = chapters[i - 1]["title"] if i > 0 else 'Cover'
-        next_title = ('Back cover' if has_covers else 'Contents') if last else chapters[i + 1]["title"]
+        prev_href = canonical_sections[i - 1]["output"] if i > 0 else 'index.html#end'
+        next_href = end_href if last else canonical_sections[i + 1]["output"]
+        next_title = (('Back cover' if has_covers else 'Contents') if last
+                      else canonical_sections[i + 1]["title"])
         reader = (
             f'<div class="preader"><i id="pbar"></i></div>'
-            f'<div class="reader" data-ch="{c["number"]}" data-prev="{prev_href}" data-next="{next_href}">'
+            f'<div class="reader" data-ch="{section["key"]}" data-prev="{prev_href}" data-next="{next_href}">'
             f'<div class="pnav l"><span>‹</span></div>'
             f'<div class="pages">{body}</div>'
             f'<div class="pnav r"><span>›</span></div>'
@@ -338,24 +379,27 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
             f'<div class="grp"><a href="{next_href}">'
             f'{("to the back cover" if has_covers else "back to contents") if last else "next: " + next_title} →</a></div>'
             f'</div>')
-        (out_dir / f'ch{c["number"]:02d}.html').write_text(
-            shell(f'{c["title"]} — {book["title"]}', reader), encoding="utf-8")
+        (out_dir / section["output"]).write_text(
+            shell(f'{section["title"]} — {book["title"]}', reader), encoding="utf-8")
 
     # --- back cover: the closing page of the cover-to-cover reader ---
     if has_covers:
-        last_ch = f'ch{chapters[-1]["number"]:02d}.html'
+        last_page = canonical_sections[-1]["output"] if canonical_sections else "index.html"
         aibn_line = (f'<div class="bc-aibn"><a href="/aibn/">{aibn_rec["aibn_human"]}</a>'
                      f' · scan on the back cover</div>' if aibn_rec else '')
         back = (f'<div class="backcover">'
                 f'<img src="{back_cover}" alt="{book["title"]} — back cover" loading="eager">'
                 f'{aibn_line}'
                 f'<div class="pagebar"><div class="grp">'
-                f'<a href="{last_ch}#end">‹ last page</a></div>'
+                f'<a href="{last_page}#end">‹ last page</a></div>'
                 f'<div class="grp"><a href="index.html">back to the cover ↺</a></div></div>'
                 f'</div>')
         (out_dir / "back-cover.html").write_text(
             shell(f'Back cover — {book["title"]}', back), encoding="utf-8")
-    print(f"rendered {len(chapters)} chapter(s) + covers + index → {out_dir}")
+    extra_pages = len(canonical_sections) - len(chapters)
+    cover_count = 1 if has_covers else 0
+    print(f"rendered {len(chapters)} chapter(s) + {extra_pages} canonical section(s) "
+          f"+ {cover_count} back cover(s) + index → {out_dir}")
 
 
 if __name__ == "__main__":

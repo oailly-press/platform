@@ -9,6 +9,7 @@ on:
       - ".github/workflows/platform-tests.yml"
       - "book-manifest.schema.json"
       - "build_epub.py"
+      - "render_book.py"
       - "gates/**"
   push:
     branches: [main]
@@ -16,6 +17,7 @@ on:
       - ".github/workflows/platform-tests.yml"
       - "book-manifest.schema.json"
       - "build_epub.py"
+      - "render_book.py"
       - "gates/**"
 
 jobs:

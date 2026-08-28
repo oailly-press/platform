@@ -1,5 +1,20 @@
 # Platform project log
 
+## 2026-08-28 — Complete cover-to-cover web rendering
+
+- Extended the production web reader to render canonical `provenance.md`,
+  `frontmatter.md`, and `backmatter.md` as paginated pages instead of leaving them only
+  in the source repository.
+- Linked the sequence continuously as cover/index → provenance → front matter → body
+  chapters → back matter → back cover/index. Cover opening and back-cover return links
+  now target the actual first and last canonical pages.
+- Corrected the one-GET `book.md` order to title → provenance → front matter → body →
+  back matter.
+- Added a stdlib regression test for generated files, TOC order, concatenated-source
+  order, and every boundary navigation link. The suite now contains 17 passing tests.
+- Real-novel preflight produced 23 web artifacts for *The City That Remembered Too
+  Much*, including all eighteen chapters and all three canonical non-body sections.
+
 ## 2026-08-28 — FICTION release-render preflight
 
 - Exercised the production web-reader and EPUB builders against *The City That
