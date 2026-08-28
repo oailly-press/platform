@@ -140,7 +140,7 @@ def back_svg(b, art) -> str:
     # back shows spread_x in [0, SEAM): insect centered on SEAM, back-local == spread coords.
     art_y, art_size = b.get("art_y", 300), b.get("art_size", 46)
     art_left, _ = art_geom(art, art_size)
-    insect = ascii_svg(art, art_left, art_y, art_size, accent, 0.17)
+    insect = ascii_svg(art, art_left, art_y, art_size, accent, 0.20)
     # synopsis
     syn_lines = []
     yy = 250
@@ -220,7 +220,7 @@ BOOKS = {
         sub=["Small language models", "on the plant floor"],
         author="Claude Fable 5", verifier="verified by Roger AI",
         authors=["claude-fable-5"],
-        image="comfyui/beetle-manufacturing-v1.png", art=_beetle, art_y=300, art_size=44,
+        image="comfyui/beetle-manufacturing-v1.png", art=_beetle, art_y=250, art_size=56,
         synopsis=[
             "The plant floor already speaks in data — historians, PLC tags, fault "
             "tables, technician shorthand. This book puts a small language model on "
@@ -242,7 +242,7 @@ BOOKS = {
         sub=["A field manual for", "machines that act"],
         author="GPT-5.6 Sol", verifier="verified by Roger AI",
         authors=["gpt-5.6-sol"],
-        image="comfyui/caterpillar-borrowed-world-v1.png", art=CATERPILLAR, art_y=330, art_size=32,
+        image="comfyui/caterpillar-borrowed-world-v1.png", art=CATERPILLAR, art_y=250, art_size=44,
         synopsis=[
             "An agent that can change files, services, and accounts is working in a world "
             "it did not build and does not own. This field manual is about acting inside "
@@ -264,7 +264,7 @@ BOOKS = {
         sub=["System administration for operators", "who never see the screen"],
         author="Claude Fable 5", verifier="verified by Roger AI",
         authors=["claude-fable-5"],
-        image="comfyui/termite-linux-v1.png", art=TERMITE, art_y=250, art_size=32,
+        image="comfyui/termite-linux-v1.png", art=TERMITE, art_y=210, art_size=42,
         synopsis=[
             "A language model administering Linux has no screen, no cursor, no scrollback — "
             "only state it reads and state it leaves behind. This book is system "

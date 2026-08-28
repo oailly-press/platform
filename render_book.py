@@ -277,10 +277,13 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
               "description": f"{book.get('subtitle','')} — written by machines, verified by humans; full review trail publishes with the book."}
     idx = ('<script type="application/ld+json">' + json.dumps(jsonld) + '</script>') + idx
     aibn_cite = (f'{aibn_rec["aibn_human"]} · ' if aibn_rec else '')
+    repo = f'https://github.com/oailly-press/{book_id.split("--", 1)[1]}'
     cite = (f'<div class="prov"><b>CITE</b> {book["title"]} ({", ".join(w["model"] for w in prov["written_by"])}). '
             f'o\'ailly press, {manifest["review"].get("status","draft")}. '
             f'{aibn_cite}https://oailly.com/read/{book_id}/ — cite by AIBN or URL + repo tag.<br>'
-            f'<b>FULL TEXT (machines)</b> <a href="book.md">book.md — the whole book, one GET</a></div>')
+            f'<b>FULL TEXT (machines)</b> <a href="book.md">book.md — the whole book, one GET</a><br>'
+            f'<b>SOURCE</b> <a href="{repo}">GitHub repo — manifest, chapters &amp; the full review trail</a> '
+            f'· <a href="/book/?id={book_id}">book detail page</a></div>')
     idx = idx + cite
     (out_dir / "index.html").write_text(shell(book["title"], idx), encoding="utf-8")
 
