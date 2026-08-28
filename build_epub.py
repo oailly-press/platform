@@ -11,6 +11,7 @@ import sys
 import uuid
 import zipfile
 from datetime import date
+from html import escape
 from pathlib import Path
 
 import markdown
@@ -46,31 +47,46 @@ def build(book_dir: Path, out: Path, cover: Path | None) -> None:
     chapters = m["structure"]["chapters"]
     uid = "urn:uuid:" + str(uuid.uuid5(uuid.NAMESPACE_URL, "oailly:" + book["title"]))
     authors = ", ".join(w["model"] for w in prov["written_by"])
+    title = escape(book["title"])
+    subtitle = escape(book.get("subtitle", ""))
+    authors_xml = escape(authors)
+    verifier = escape(prov["verified_by"].get("name") or "pending")
+    disclosure = escape(prov["disclosure_statement"])
 
     items, spine, navlis = [], [], []
     docs: list[tuple[str, str]] = []
 
-    prov_body = (f"<h1>{book['title']}</h1><p><i>{book.get('subtitle','')}</i></p>"
-                 f"<div class='provenance'><p><b>WRITTEN BY</b> {authors}</p>"
-                 f"<p><b>VERIFIED BY</b> {prov['verified_by'].get('name') or 'pending'}</p>"
-                 f"<p><b>DISCLOSURE</b> {prov['disclosure_statement']}</p>"
+    prov_body = (f"<h1>{title}</h1><p><i>{subtitle}</i></p>"
+                 f"<div class='provenance'><p><b>WRITTEN BY</b> {authors_xml}</p>"
+                 f"<p><b>VERIFIED BY</b> {verifier}</p>"
+                 f"<p><b>DISCLOSURE</b> {disclosure}</p>"
                  f"<p><b>PROVENANCE &amp; REVIEW TRAIL</b> https://oailly.com — the full "
                  f"review record publishes with this book.</p></div>")
-    docs.append(("titlepage.xhtml", XHTML.format(title=book["title"], body=prov_body)))
+    docs.append(("titlepage.xhtml", XHTML.format(title=title, body=prov_body)))
     navlis.append('<li><a href="titlepage.xhtml">Title &amp; Provenance</a></li>')
+
+    # Canonical front matter belongs before the body. Keep the full provenance page in
+    # the human rendering rather than reducing it to the synthesized title-page card.
+    for source, label in (("provenance.md", "Provenance"),
+                          ("frontmatter.md", "Front Matter")):
+        path = book_dir / source
+        if path.exists():
+            filename = source.replace(".md", ".xhtml")
+            docs.append((filename, XHTML.format(title=label, body=md(path.read_text()))))
+            navlis.append(f'<li><a href="{filename}">{label}</a></li>')
 
     for c in chapters:
         fn = f"ch{c['number']:02d}.xhtml"
         body = md((book_dir / c["source_file"]).read_text())
-        docs.append((fn, XHTML.format(title=c["title"], body=body)))
-        navlis.append(f'<li><a href="{fn}">{c["number"]}. {c["title"]}</a></li>')
+        chapter_title = escape(c["title"])
+        docs.append((fn, XHTML.format(title=chapter_title, body=body)))
+        navlis.append(f'<li><a href="{fn}">{c["number"]}. {chapter_title}</a></li>')
 
-    for f in ("frontmatter.md", "backmatter.md"):
-        p = book_dir / f
-        if p.exists():
-            fn = f.replace(".md", ".xhtml")
-            docs.append((fn, XHTML.format(title=f, body=md(p.read_text()))))
-            navlis.append(f'<li><a href="{fn}">{f.split(".")[0].title()}</a></li>')
+    backmatter = book_dir / "backmatter.md"
+    if backmatter.exists():
+        docs.append(("backmatter.xhtml",
+                     XHTML.format(title="Back Matter", body=md(backmatter.read_text()))))
+        navlis.append('<li><a href="backmatter.xhtml">Back Matter</a></li>')
 
     for fn, _ in docs:
         iid = fn.split(".")[0]
@@ -87,12 +103,12 @@ def build(book_dir: Path, out: Path, cover: Path | None) -> None:
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
   <dc:identifier id="uid">{uid}</dc:identifier>
-  <dc:title>{book['title']}</dc:title>
-  <dc:creator>{authors}</dc:creator>
-  <dc:language>{book.get('language','en')}</dc:language>
+  <dc:title>{title}</dc:title>
+  <dc:creator>{authors_xml}</dc:creator>
+  <dc:language>{escape(book.get('language','en'))}</dc:language>
   <dc:publisher>o'ailly press (RogerAI Labs)</dc:publisher>
   <dc:date>{date.today().isoformat()}</dc:date>
-  <dc:description>{book.get('subtitle','')} — written by machines, verified by humans; provenance and review trail at oailly.com.</dc:description>
+  <dc:description>{subtitle} — written by machines, verified by humans; provenance and review trail at oailly.com.</dc:description>
   <meta property="dcterms:modified">{date.today().isoformat()}T00:00:00Z</meta>
  </metadata>
  <manifest>

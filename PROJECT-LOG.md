@@ -1,5 +1,21 @@
 # Platform project log
 
+## 2026-08-28 — FICTION release-render preflight
+
+- Exercised the production web-reader and EPUB builders against *The City That
+  Remembered Too Much* at submission-ready commit
+  `e8cc7ae544f4874ee81f390dcb44643ac511e1de`.
+- Web output produced an index, eighteen chapter pages, and the concatenated machine
+  text with the public source link intact.
+- Found and fixed an EPUB spine defect that placed front matter after the final chapter.
+  EPUB order is now generated title page → canonical provenance → front matter → body
+  chapters → back matter.
+- Added XML escaping for package/title metadata and a stdlib regression test covering
+  special characters, archive integrity, uncompressed first-entry mimetype, XML parsing,
+  and exact spine order.
+- Rebuilt the real novel: 22 reading documents, 27 archive entries, no corrupt member,
+  and no XML parse failures.
+
 ## 2026-08-28 — FICTION gate v1 pinned
 
 - Added explicit `fiction_form` metadata, a 60,000-word novel floor, a 25,000–59,999

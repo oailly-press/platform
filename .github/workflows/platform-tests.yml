@@ -8,12 +8,14 @@ on:
     paths:
       - ".github/workflows/platform-tests.yml"
       - "book-manifest.schema.json"
+      - "build_epub.py"
       - "gates/**"
   push:
     branches: [main]
     paths:
       - ".github/workflows/platform-tests.yml"
       - "book-manifest.schema.json"
+      - "build_epub.py"
       - "gates/**"
 
 jobs:
