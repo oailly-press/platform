@@ -92,15 +92,23 @@ def front_svg(b, art) -> str:
     # insect straddles the spine, centered on SEAM. Front is spread_x>=SEAM, so shift by -SEAM.
     art_y, art_size = b.get("art_y", 300), b.get("art_size", 46)
     art_left, _ = art_geom(art, art_size)
-    insect = ascii_svg(art, art_left - SEAM, art_y, art_size, accent, 0.20)
+    insect = ascii_svg(art, art_left - SEAM, art_y, art_size, accent, 0.16)
+    # original Flux illustration, mounted lower-right (the house look — kept alongside the ASCII)
+    illo = ''
+    if b.get("image"):
+        ix, iy, iw = 440, 512, 548
+        illo = (f'<image xlink:href="{b["image"]}" x="{ix}" y="{iy}" width="{iw}" height="{iw}"/>'
+                f'<rect x="{ix}" y="{iy}" width="{iw-1}" height="{iw}" rx="12" fill="none" '
+                f'stroke="{accent}" stroke-width="1.5" opacity="0.32"/>')
     tl = title_block(b["title"], 48, 250, 104, 94, "#E8EAED")
     sub = title_block(b["sub"], 52, 250 + (len(b["title"]) - 1)*104 + 62, 42, 33, accent,
                       weight=500, spacing="0")
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" font-family="Archivo,Inter,system-ui,sans-serif">
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 {W} {H}" width="{W}" height="{H}" font-family="Archivo,Inter,system-ui,sans-serif">
   <clipPath id="cf"><rect width="{W}" height="{H}"/></clipPath>
   <g clip-path="url(#cf)">
   <rect width="{W}" height="{H}" fill="{b['bg']}"/>
   {insect}
+  {illo}
   {MAST.format(lx=52, accent=accent, ax=96, axm=107, axp=118)}
   <rect x="836" y="46" width="118" height="44" rx="8" fill="none" stroke="{accent}" stroke-width="2.5"/>
   <text x="895" y="75" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="21" letter-spacing="2" fill="{accent}">{b['rev']}</text>
@@ -182,8 +190,8 @@ def back_svg(b, art) -> str:
 def spread_svg(front, back):
     fb = front.split(">", 1)[1].rsplit("</svg>", 1)[0]
     bb = back.split(">", 1)[1].rsplit("</svg>", 1)[0]
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SPREAD_W} {H}" '
-            f'width="{SPREAD_W}" height="{H}">'
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+            f'viewBox="0 0 {SPREAD_W} {H}" width="{SPREAD_W}" height="{H}">'
             f'<g>{bb}</g><g transform="translate({W},0)">{fb}</g>'
             f'<line x1="{W}" y1="0" x2="{W}" y2="{H}" stroke="#000" stroke-width="2" opacity="0.35"/>'
             f'</svg>')
@@ -212,7 +220,7 @@ BOOKS = {
         sub=["Small language models", "on the plant floor"],
         author="Claude Fable 5", verifier="verified by Roger AI",
         authors=["claude-fable-5"],
-        art=_beetle, art_y=300, art_size=44,
+        image="comfyui/beetle-manufacturing-v1.png", art=_beetle, art_y=300, art_size=44,
         synopsis=[
             "The plant floor already speaks in data — historians, PLC tags, fault "
             "tables, technician shorthand. This book puts a small language model on "
@@ -234,7 +242,7 @@ BOOKS = {
         sub=["A field manual for", "machines that act"],
         author="GPT-5.6 Sol", verifier="verified by Roger AI",
         authors=["gpt-5.6-sol"],
-        art=CATERPILLAR, art_y=330, art_size=32,
+        image="comfyui/caterpillar-borrowed-world-v1.png", art=CATERPILLAR, art_y=330, art_size=32,
         synopsis=[
             "An agent that can change files, services, and accounts is working in a world "
             "it did not build and does not own. This field manual is about acting inside "
@@ -256,7 +264,7 @@ BOOKS = {
         sub=["System administration for operators", "who never see the screen"],
         author="Claude Fable 5", verifier="verified by Roger AI",
         authors=["claude-fable-5"],
-        art=TERMITE, art_y=250, art_size=32,
+        image="comfyui/termite-linux-v1.png", art=TERMITE, art_y=250, art_size=32,
         synopsis=[
             "A language model administering Linux has no screen, no cursor, no scrollback — "
             "only state it reads and state it leaves behind. This book is system "
