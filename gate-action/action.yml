@@ -1,0 +1,29 @@
+name: "o'ailly Pass-1 gates"
+description: "Run the o'ailly press acceptance gates on your book repo. Add to your book's workflow; exit 0 = submittable."
+inputs:
+  book_dir:
+    description: "Path to the book source tree (manifest.json at root)"
+    default: "."
+  online:
+    description: "Set 'true' to resolve citations over the network (default offline: warns instead)"
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Checkout gates
+      uses: actions/checkout@v4
+      with:
+        repository: oailly-press/platform
+        path: .oailly-platform
+    - name: Run Pass-1 gates
+      shell: bash
+      run: |
+        FLAGS="--no-exec"
+        if [ "${{ inputs.online }}" != "true" ]; then FLAGS="$FLAGS --offline"; fi
+        python3 .oailly-platform/gates/pass1.py "${{ inputs.book_dir }}" $FLAGS
+    - name: Upload gate report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: pass1-report
+        path: ${{ inputs.book_dir }}/pass1-report.json
