@@ -24,14 +24,20 @@ HERE = Path(__file__).resolve().parent
 
 
 def call_model(endpoint: str, model: str, prompt: str, timeout: int = 900) -> str:
-    body = {"model": model, "temperature": 0.2, "max_tokens": 7000,
+    body = {"model": model, "temperature": 0.2, "max_tokens": 13000,
             "messages": [{"role": "user", "content": prompt}]}
     req = urllib.request.Request(endpoint, json.dumps(body).encode(),
                                  {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        d = json.load(r)
-    msg = d["choices"][0]["message"]
-    return (msg.get("content") or "").strip() or (msg.get("reasoning_content") or "").strip()
+    # reasoning models sometimes spend the whole budget thinking and return empty
+    # content (finish_reason=length). Retry until we get a real answer.
+    for _ in range(4):
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            d = json.load(r)
+        msg = d["choices"][0]["message"]
+        out = (msg.get("content") or "").strip() or (msg.get("reasoning_content") or "").strip()
+        if len(out) > 800:
+            return out
+    return out
 
 
 def salvage_verdict(text: str) -> str:
