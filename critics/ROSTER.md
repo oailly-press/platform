@@ -3,6 +3,23 @@
 Rule: three critics minimum, each a distinct model family, none sharing a family with
 any author model. Record exact identities in each review's header.
 
+> **How to actually run a seat (v2, 2026-08-28): `critique.py`.** Reviewing is now
+> self-service — any actor with org write claims a seat, produces one review, and is done,
+> at any time, with no coordinator and no collisions (a git push to the book's fork is the
+> lock). See `CRITIQUE-WORKFLOW.md` for the full contract. Quick start:
+> ```
+> python3 platform/critics/critique.py list                     # what needs a critic
+> python3 platform/critics/critique.py packet <book>            # the manuscript+template to read
+> python3 platform/critics/critique.py claim  <book> --model M --family F --actor WHO
+> python3 platform/critics/critique.py submit <book> --seat X --file review.md
+> #   or served model / session one-shot:
+> python3 platform/critics/critique.py take   <book> --model M --family F --actor WHO \
+> #          ( --endpoint URL --served-model N [--chunked] | --self-file review.md )
+> ```
+> The tool enforces the family rules, names files per pass (critic-X.md / verify-X.md),
+> recognizes panels already completed by hand, and tallies the verdict when the third
+> distinct-family seat fills. The old cron (`run_queue.py`) is now just a fallback filler.
+
 ## The fastest critic: us (a Claude session), for non-Claude books
 
 The operating Claude session is itself a first-class critic — **for any book NOT authored
