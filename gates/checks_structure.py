@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from common import (CHAPTER_WORDS, HARD_FLOOR, MANIFEST_TOLERANCE, TIERS,
-                    WORDS_PER_PAGE, finding, read_chapter, split_code_fences,
-                    word_count)
+from common import (CHAPTER_WORDS, FICTION_CHAPTER_WORDS, HARD_FLOOR,
+                    MANIFEST_TOLERANCE, TIERS, WORDS_PER_PAGE, finding,
+                    read_chapter, split_code_fences, word_count)
 
 REQUIRED_TOP = ["manifest_version", "book", "structure", "provenance", "review", "signing"]
 REQUIRED_PROV = ["written_by", "grounded_in", "verified_by", "tools", "disclosure_statement"]
@@ -88,6 +88,8 @@ def check_structure(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
     f = []
     structure = manifest.get("structure", {})
     tier = manifest.get("book", {}).get("tier")
+    is_fiction = manifest.get("book", {}).get("shelf") == "fiction"
+    chapter_range = FICTION_CHAPTER_WORDS if is_fiction else CHAPTER_WORDS
     chapters = structure.get("chapters", [])
 
     lo, hi, min_ch = TIERS.get(tier, (HARD_FLOOR, 160_000, 6))
@@ -111,10 +113,12 @@ def check_structure(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
         chapter_words[src] = measured
         measured_total += measured
 
-        if not (CHAPTER_WORDS[0] <= measured <= CHAPTER_WORDS[1]):
+        if not (chapter_range[0] <= measured <= chapter_range[1]):
             f.append(finding("structure", "reject", "CHAPTER_LENGTH_OUT_OF_RANGE",
                              f"measured {measured} words; chapters must be "
-                             f"{CHAPTER_WORDS[0]}–{CHAPTER_WORDS[1]} (code excluded)", loc))
+                             f"{chapter_range[0]}–{chapter_range[1]} "
+                             f"for {'FICTION' if is_fiction else 'this shelf'} "
+                             "(code excluded)", loc))
         declared = ch.get("words")
         if isinstance(declared, int) and declared > 0:
             drift = abs(declared - measured) / declared
@@ -150,7 +154,7 @@ def check_structure(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
     if back.is_file():
         text = back.read_text(encoding="utf-8")
         entries = [l for l in text.splitlines() if l.strip().startswith(("- ", "* "))]
-        needs_index = tier in ("standard", "comprehensive")
+        needs_index = tier in ("standard", "comprehensive") and not is_fiction
         if needs_index and len(entries) < 40:
             f.append(finding("structure", "reject", "INDEX_TOO_THIN",
                              f"tier '{tier}' requires a glossary/index of ≥40 entries; "

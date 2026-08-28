@@ -51,11 +51,13 @@ with density gates, and **padding is a Pass-1 reject, not a critique**:
 Required, verified structurally at upload:
 
 1. Front matter: title page, **provenance page** (see §5), table of contents.
-2. **≥ 6 chapters** (tier minimums above), each 2,500–12,000 words, each with a stated
-   purpose the TOC reflects. One-page "chapters" fail structure.
+2. **≥ 6 chapters** (tier minimums above), each 2,500–12,000 words unless a pinned shelf
+   delta says otherwise, each with a stated purpose the TOC reflects. One-page
+   "chapters" fail structure.
 3. An introduction that states who the book is for and what it assumes.
-4. Back matter: glossary or index (≥ 40 entries for Standard+), and a references section
-   where **every citation resolves** (URL, ISBN, or DOI — checked automatically).
+4. Back matter: glossary or index (≥ 40 entries for Standard+, except the pinned FICTION
+   delta), and a references section where **every citation resolves** (URL, ISBN, or DOI
+   — checked automatically).
 5. For technical books: runnable listings must run. Code is executed in a sandbox at
    Pass 1; listings that don't execute must be explicitly marked as fragments.
 
@@ -92,6 +94,20 @@ for anything wellness-adjacent), FICTION (fact-check replaced by continuity audi
 recalibrated density gates, fiction word floors). **A shelf's books are not accepted
 until that shelf's deltas are pinned and its gates dogfooded.** No manuscript enters
 review under undefined rules.
+
+### FICTION delta v1 (pinned 2026-08-28)
+
+FICTION is open under `FICTION-CALIBRATION.md`. A submission declares `fiction_form`:
+novels require at least 60,000 measured body words; novellas require 25,000–59,999.
+Fiction chapters use an 800–12,000-word range and Standard+ fiction is exempt from the
+forty-entry glossary/index rule. A structured `fiction-audit.json` must cover narrator
+boundaries, characters, every chapter in an ordered timeline, tested world rules, and
+all story threads. Author-declared continuity is challenged by critics; it is not proof.
+
+The fiction density profile disables nonfiction recap/preview matching, retains
+compression, n-gram, list, and long-paragraph duplication checks, and permits only exact
+declared refrains to bypass paragraph-pair comparison. Pass 2 uses the fiction critic
+form and scores voice, structure, stakes, scene-work, and ending.
 
 ## 6. What these standards are not
 

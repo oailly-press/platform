@@ -11,13 +11,18 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from common import finding
+from common import (FICTION_NOVEL_FLOOR, FICTION_NOVELLA_RANGE, finding,
+                    read_chapter, split_code_fences, word_count)
 
 
 FMR_SHELF = "for-machine-readers"
 FMR_SERIES = "o'ailly for machine readers"
 FMR_MIN_CASES = 10
 FMR_MIN_FAMILIES = 3
+FICTION_SHELF = "fiction"
+FICTION_AUDIT_VERSION = "1.0"
+FICTION_FORMS = {"novel", "novella"}
+FICTION_THREAD_STATES = {"resolved", "intentional-ambiguity"}
 
 
 def _shelf(manifest: dict) -> str | None:
@@ -230,8 +235,427 @@ def _check_fmr(_manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
     return findings, metrics
 
 
+def _fiction_words(manifest: dict, book_dir: Path) -> int:
+    total = 0
+    for chapter in manifest.get("structure", {}).get("chapters", []):
+        text = read_chapter(book_dir, chapter.get("source_file", ""))
+        if text is None:
+            continue
+        prose, _ = split_code_fences(text)
+        total += word_count(prose)
+    return total
+
+
+def _valid_chapter(value, chapter_numbers: set[int]) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value in chapter_numbers
+
+
+def _check_fiction(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
+    findings: list[dict] = []
+    book = manifest.get("book", {})
+    form = book.get("fiction_form")
+    measured_words = _fiction_words(manifest, book_dir)
+    chapters = manifest.get("structure", {}).get("chapters", [])
+    chapter_numbers = {
+        chapter.get("number") for chapter in chapters
+        if isinstance(chapter.get("number"), int)
+    }
+    metrics: dict = {
+        "shelf": FICTION_SHELF,
+        "form": form,
+        "measured_words": measured_words,
+        "continuity_audit": "missing",
+    }
+
+    if form not in FICTION_FORMS:
+        findings.append(finding(
+            "shelf", "reject", "FICTION_FORM_INVALID",
+            "FICTION requires book.fiction_form to be 'novel' or 'novella'",
+            "book.fiction_form",
+        ))
+    elif form == "novel" and measured_words < FICTION_NOVEL_FLOOR:
+        findings.append(finding(
+            "shelf", "reject", "FICTION_NOVEL_TOO_SHORT",
+            f"fiction_form 'novel' requires at least {FICTION_NOVEL_FLOOR} measured "
+            f"body words; found {measured_words}",
+            "book",
+        ))
+    elif form == "novella" and not (
+        FICTION_NOVELLA_RANGE[0] <= measured_words <= FICTION_NOVELLA_RANGE[1]
+    ):
+        findings.append(finding(
+            "shelf", "reject", "FICTION_NOVELLA_LENGTH_MISMATCH",
+            f"fiction_form 'novella' requires {FICTION_NOVELLA_RANGE[0]}–"
+            f"{FICTION_NOVELLA_RANGE[1]} measured body words; found {measured_words}",
+            "book",
+        ))
+
+    path = book_dir / "fiction-audit.json"
+    if not path.is_file():
+        findings.append(finding(
+            "shelf", "reject", "FICTION_AUDIT_MISSING",
+            "FICTION requires fiction-audit.json with narrator access rules, character "
+            "ranges, timeline coverage, world rules, and resolved or intentionally "
+            "ambiguous threads",
+            "fiction-audit.json",
+        ))
+        return findings, metrics
+
+    audit = _load_json(path, "FICTION_AUDIT_INVALID", findings)
+    if not isinstance(audit, dict):
+        return findings, metrics
+    metrics["continuity_audit"] = "loaded"
+
+    if audit.get("version") != FICTION_AUDIT_VERSION:
+        findings.append(finding(
+            "shelf", "reject", "FICTION_AUDIT_VERSION_INVALID",
+            f"fiction-audit.json version must be {FICTION_AUDIT_VERSION!r}",
+            "fiction-audit.json",
+        ))
+    if form in FICTION_FORMS and audit.get("form") != form:
+        findings.append(finding(
+            "shelf", "reject", "FICTION_AUDIT_FORM_MISMATCH",
+            "fiction-audit.json form must match book.fiction_form",
+            "fiction-audit.json",
+        ))
+
+    narrator = audit.get("narrator")
+    if not isinstance(narrator, dict):
+        findings.append(finding(
+            "shelf", "reject", "FICTION_NARRATOR_AUDIT_MISSING",
+            "fiction-audit.json requires a narrator object",
+            "fiction-audit.json",
+        ))
+    else:
+        if not isinstance(narrator.get("mode"), str) or not narrator["mode"].strip():
+            findings.append(finding(
+                "shelf", "reject", "FICTION_NARRATOR_MODE_MISSING",
+                "narrator.mode must be a non-empty string",
+                "fiction-audit.json",
+            ))
+        access = narrator.get("access_rules")
+        if not isinstance(access, list) or len(access) < 2 or not all(
+            isinstance(rule, str) and rule.strip() for rule in access
+        ):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_ACCESS_RULES_THIN",
+                "narrator.access_rules requires at least two non-empty rules",
+                "fiction-audit.json",
+            ))
+        if not isinstance(narrator.get("uncertainty_policy"), str) or not narrator[
+            "uncertainty_policy"
+        ].strip():
+            findings.append(finding(
+                "shelf", "reject", "FICTION_UNCERTAINTY_POLICY_MISSING",
+                "narrator.uncertainty_policy must state how unknowns are narrated",
+                "fiction-audit.json",
+            ))
+
+    characters = audit.get("characters")
+    character_ids: set[str] = set()
+    if not isinstance(characters, list) or len(characters) < 3:
+        findings.append(finding(
+            "shelf", "reject", "FICTION_CHARACTERS_THIN",
+            "continuity audit requires at least three character records",
+            "fiction-audit.json",
+        ))
+        characters = []
+    for index, character in enumerate(characters):
+        loc = f"fiction-audit.json.characters[{index}]"
+        if not isinstance(character, dict):
+            findings.append(finding("shelf", "reject", "FICTION_CHARACTER_INVALID",
+                                    "character record must be an object", loc))
+            continue
+        required = {"id", "name", "role", "first_chapter", "last_chapter"}
+        missing = required - set(character)
+        if missing:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_CHARACTER_FIELD_MISSING",
+                f"character record missing fields {sorted(missing)}", loc,
+            ))
+            continue
+        character_id = character.get("id")
+        if not isinstance(character_id, str) or not character_id.strip():
+            findings.append(finding("shelf", "reject", "FICTION_CHARACTER_ID_INVALID",
+                                    "character id must be a non-empty string", loc))
+        elif character_id in character_ids:
+            findings.append(finding("shelf", "reject", "FICTION_CHARACTER_ID_DUPLICATE",
+                                    f"duplicate character id {character_id!r}", loc))
+        else:
+            character_ids.add(character_id)
+        if not all(isinstance(character.get(key), str) and character[key].strip()
+                   for key in ("name", "role")):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_CHARACTER_TEXT_INVALID",
+                "character name and role must be non-empty strings", loc,
+            ))
+        first, last = character.get("first_chapter"), character.get("last_chapter")
+        if not _valid_chapter(first, chapter_numbers) or not _valid_chapter(last, chapter_numbers):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_CHARACTER_RANGE_INVALID",
+                "first_chapter and last_chapter must reference manifest chapters", loc,
+            ))
+        elif first > last:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_CHARACTER_RANGE_REVERSED",
+                "first_chapter cannot follow last_chapter", loc,
+            ))
+
+    timeline = audit.get("timeline")
+    event_ids: set[str] = set()
+    covered: set[int] = set()
+    prior_sequence = None
+    dependencies: list[tuple[str, list[str], str]] = []
+    if not isinstance(timeline, list) or not timeline:
+        findings.append(finding(
+            "shelf", "reject", "FICTION_TIMELINE_MISSING",
+            "continuity audit requires timeline events", "fiction-audit.json",
+        ))
+        timeline = []
+    for index, event in enumerate(timeline):
+        loc = f"fiction-audit.json.timeline[{index}]"
+        if not isinstance(event, dict):
+            findings.append(finding("shelf", "reject", "FICTION_TIMELINE_EVENT_INVALID",
+                                    "timeline event must be an object", loc))
+            continue
+        required = {"id", "chapter", "sequence", "description"}
+        missing = required - set(event)
+        if missing:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_TIMELINE_FIELD_MISSING",
+                f"timeline event missing fields {sorted(missing)}", loc,
+            ))
+            continue
+        event_id = event.get("id")
+        if not isinstance(event_id, str) or not event_id.strip():
+            findings.append(finding("shelf", "reject", "FICTION_TIMELINE_ID_INVALID",
+                                    "timeline id must be a non-empty string", loc))
+        elif event_id in event_ids:
+            findings.append(finding("shelf", "reject", "FICTION_TIMELINE_ID_DUPLICATE",
+                                    f"duplicate timeline id {event_id!r}", loc))
+        else:
+            event_ids.add(event_id)
+        if not isinstance(event.get("description"), str) or not event["description"].strip():
+            findings.append(finding(
+                "shelf", "reject", "FICTION_TIMELINE_DESCRIPTION_INVALID",
+                "timeline description must be a non-empty string", loc,
+            ))
+        chapter = event.get("chapter")
+        if not _valid_chapter(chapter, chapter_numbers):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_TIMELINE_CHAPTER_INVALID",
+                "timeline chapter must reference a manifest chapter", loc,
+            ))
+        else:
+            covered.add(chapter)
+        sequence = event.get("sequence")
+        if not isinstance(sequence, (int, float)) or isinstance(sequence, bool):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_TIMELINE_SEQUENCE_INVALID",
+                "timeline sequence must be numeric", loc,
+            ))
+        elif prior_sequence is not None and sequence <= prior_sequence:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_TIMELINE_NOT_ORDERED",
+                "timeline sequence values must increase in file order", loc,
+            ))
+        else:
+            prior_sequence = sequence
+        depends = event.get("depends_on", [])
+        if not isinstance(depends, list) or not all(isinstance(item, str) for item in depends):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_TIMELINE_DEPENDENCY_INVALID",
+                "depends_on must be a list of timeline ids", loc,
+            ))
+        else:
+            dependencies.append((event_id, depends, loc))
+    missing_chapters = chapter_numbers - covered
+    if missing_chapters:
+        findings.append(finding(
+            "shelf", "reject", "FICTION_TIMELINE_COVERAGE_INCOMPLETE",
+            f"timeline lacks events for chapters {sorted(missing_chapters)}",
+            "fiction-audit.json",
+        ))
+    event_order = {
+        event.get("id"): index for index, event in enumerate(timeline)
+        if isinstance(event, dict) and isinstance(event.get("id"), str)
+    }
+    for event_id, depends, loc in dependencies:
+        unknown = set(depends) - event_ids
+        if unknown or event_id in depends:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_TIMELINE_DEPENDENCY_UNKNOWN",
+                f"timeline dependency invalid: unknown={sorted(unknown)}, self={event_id in depends}",
+                loc,
+            ))
+            continue
+        later = [dependency for dependency in depends
+                 if event_order.get(dependency, -1) >= event_order.get(event_id, -1)]
+        if later:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_TIMELINE_DEPENDENCY_FORWARD",
+                f"timeline dependencies must name earlier events; found {sorted(later)}",
+                loc,
+            ))
+
+    rules = audit.get("world_rules")
+    rule_ids: set[str] = set()
+    if not isinstance(rules, list) or len(rules) < 3:
+        findings.append(finding(
+            "shelf", "reject", "FICTION_WORLD_RULES_THIN",
+            "continuity audit requires at least three world rules",
+            "fiction-audit.json",
+        ))
+        rules = []
+    for index, rule in enumerate(rules):
+        loc = f"fiction-audit.json.world_rules[{index}]"
+        if not isinstance(rule, dict):
+            findings.append(finding("shelf", "reject", "FICTION_WORLD_RULE_INVALID",
+                                    "world rule must be an object", loc))
+            continue
+        required = {"id", "rule", "introduced_chapter", "tested_chapters"}
+        missing = required - set(rule)
+        if missing:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_WORLD_RULE_FIELD_MISSING",
+                f"world rule missing fields {sorted(missing)}", loc,
+            ))
+            continue
+        rule_id = rule.get("id")
+        if not isinstance(rule_id, str) or not rule_id.strip() or rule_id in rule_ids:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_WORLD_RULE_ID_INVALID",
+                "world rule id must be non-empty and unique", loc,
+            ))
+        else:
+            rule_ids.add(rule_id)
+        if not isinstance(rule.get("rule"), str) or not rule["rule"].strip():
+            findings.append(finding(
+                "shelf", "reject", "FICTION_WORLD_RULE_TEXT_INVALID",
+                "world rule text must be a non-empty string", loc,
+            ))
+        introduced = rule.get("introduced_chapter")
+        tested = rule.get("tested_chapters")
+        if not _valid_chapter(introduced, chapter_numbers):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_WORLD_RULE_CHAPTER_INVALID",
+                "introduced_chapter must reference a manifest chapter", loc,
+            ))
+        if not isinstance(tested, list) or not tested or not all(
+            _valid_chapter(chapter, chapter_numbers) for chapter in tested
+        ):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_WORLD_RULE_TESTS_INVALID",
+                "tested_chapters must be a non-empty list of manifest chapters", loc,
+            ))
+        elif _valid_chapter(introduced, chapter_numbers) and any(
+            chapter < introduced for chapter in tested
+        ):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_WORLD_RULE_TEST_PRECEDES_INTRODUCTION",
+                "tested_chapters cannot precede introduced_chapter", loc,
+            ))
+
+    threads = audit.get("threads")
+    thread_ids: set[str] = set()
+    ambiguity_count = 0
+    if not isinstance(threads, list) or not threads:
+        findings.append(finding(
+            "shelf", "reject", "FICTION_THREADS_MISSING",
+            "continuity audit requires tracked story threads",
+            "fiction-audit.json",
+        ))
+        threads = []
+    for index, thread in enumerate(threads):
+        loc = f"fiction-audit.json.threads[{index}]"
+        if not isinstance(thread, dict):
+            findings.append(finding("shelf", "reject", "FICTION_THREAD_INVALID",
+                                    "thread must be an object", loc))
+            continue
+        required = {"id", "status", "introduced_chapter", "resolution_chapter", "note"}
+        missing = required - set(thread)
+        if missing:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_THREAD_FIELD_MISSING",
+                f"thread missing fields {sorted(missing)}", loc,
+            ))
+            continue
+        thread_id = thread.get("id")
+        if not isinstance(thread_id, str) or not thread_id.strip() or thread_id in thread_ids:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_THREAD_ID_INVALID",
+                "thread id must be non-empty and unique", loc,
+            ))
+        else:
+            thread_ids.add(thread_id)
+        if not isinstance(thread.get("note"), str) or not thread["note"].strip():
+            findings.append(finding(
+                "shelf", "reject", "FICTION_THREAD_NOTE_INVALID",
+                "thread note must explain its resolution or intentional ambiguity", loc,
+            ))
+        status = thread.get("status")
+        if status not in FICTION_THREAD_STATES:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_THREAD_UNRESOLVED",
+                "thread status must be resolved or intentional-ambiguity",
+                loc,
+            ))
+        elif status == "intentional-ambiguity":
+            ambiguity_count += 1
+        introduced = thread.get("introduced_chapter")
+        resolved = thread.get("resolution_chapter")
+        if not _valid_chapter(introduced, chapter_numbers) or not _valid_chapter(
+            resolved, chapter_numbers
+        ):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_THREAD_RANGE_INVALID",
+                "thread chapters must reference manifest chapters", loc,
+            ))
+        elif introduced > resolved:
+            findings.append(finding(
+                "shelf", "reject", "FICTION_THREAD_RANGE_REVERSED",
+                "resolution_chapter cannot precede introduced_chapter", loc,
+            ))
+
+    refrains = audit.get("refrains", [])
+    if not isinstance(refrains, list):
+        findings.append(finding(
+            "shelf", "reject", "FICTION_REFRAINS_INVALID",
+            "refrains must be a list", "fiction-audit.json",
+        ))
+        refrains = []
+    for index, refrain in enumerate(refrains):
+        loc = f"fiction-audit.json.refrains[{index}]"
+        if not isinstance(refrain, dict) or set(("text", "purpose")) - set(refrain):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_REFRAIN_FIELD_MISSING",
+                "each declared refrain requires text and purpose", loc,
+            ))
+        elif not all(isinstance(refrain.get(key), str) and refrain[key].strip()
+                     for key in ("text", "purpose")):
+            findings.append(finding(
+                "shelf", "reject", "FICTION_REFRAIN_INVALID",
+                "refrain text and purpose must be non-empty strings", loc,
+            ))
+
+    metrics.update({
+        "character_count": len(characters),
+        "timeline_events": len(timeline),
+        "chapters_covered": len(covered),
+        "world_rule_count": len(rules),
+        "thread_count": len(threads),
+        "intentional_ambiguities": ambiguity_count,
+        "declared_refrains": len(refrains),
+    })
+    if not findings:
+        metrics["continuity_audit"] = "PASS"
+    return findings, metrics
+
+
 def check_shelf(manifest: dict, book_dir: Path) -> tuple[list[dict], dict]:
     shelf = _shelf(manifest)
     if shelf == FMR_SHELF:
         return _check_fmr(manifest, book_dir)
+    if shelf == FICTION_SHELF:
+        return _check_fiction(manifest, book_dir)
     return [], {"shelf": shelf}

@@ -22,17 +22,22 @@ VERIFIED BY) · `backmatter.md` (glossary/index + `## References`).
   the files, not trusted from the manifest** (>5% drift between declared and measured
   word counts is itself a reject); required files; provenance completeness (named
   verifier, named steward, exact model ids).
-- `checks_padding.py` — the anti-padding battery: zlib compression (reject <0.22 —
+- `checks_padding.py` — the anti-padding battery: zlib compression (nonfiction reject <0.22 —
   calibrated 2026-08-27: real prose measures 0.39–0.52 even at 5MB; a padded loop
   measures 0.02), paragraph near-dup shingling, per-chapter scaffolding share (≤15%),
-  listicle inflation, boilerplate n-gram loops.
+  listicle inflation, boilerplate n-gram loops. The calibrated `fiction-v1` profile
+  rejects compression below 0.20, disables nonfiction scaffold matching, and narrowly
+  exempts exact declared refrains from long-paragraph pairing; see
+  `../FICTION-CALIBRATION.md`.
 - `checks_refs_code.py` — every reference resolves (URL HEAD/GET, DOI via doi.org, ISBN
   checksum); fenced listings execute in a scratch sandbox per `code_listing_policy`
   (` ```python fragment ` marks non-runnable listings).
 - `checks_shelves.py` — shelf-specific artifact contracts. FOR MACHINE READERS requires
   a documented paired evaluation, structured held-out cases, action-required controls,
   and a perfect fixture independently scored by platform-owned code. The intake gate
-  never executes an author's evaluation program.
+  never executes an author's evaluation program. FICTION requires a declared novel or
+  novella form and validates the structured continuity audit across narrator rules,
+  characters, every chapter, world rules, and story threads.
 - `checks_catalog.py` — cross-catalog contamination: sampled shingle fingerprints,
   Jaccard vs every published book (reject ≥15%, warn ≥5%). `register_fingerprint()` is
   called at publication to add a book to `../catalog-index/`.
@@ -45,5 +50,8 @@ VERIFIED BY) · `backmatter.md` (glossary/index + `## References`).
 | Clean synthetic pocket book (28.5k words, live URLs, real ISBN, runnable listing) | PASS, exit 0 |
 | Padded book (3-paragraph loop + recap scaffolding) | REJECT — scaffold 25%, compression 0.021, 100% near-dup |
 | Copycat (clean book re-badged under another publisher) | REJECT — CATALOG_OVERLAP 100% |
+| FICTION dogfood novel (60,263 measured words; complete audit) | PASS — 0 rejects, 0 warnings |
+| FICTION novel below 60,000 words | REJECT — FICTION_NOVEL_TOO_SHORT |
+| FICTION with incomplete timeline coverage | REJECT — FICTION_TIMELINE_COVERAGE |
 
 Threshold changes must be logged in PROJECT-LOG with the measurement that justified them.

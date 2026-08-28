@@ -79,23 +79,29 @@ IN ADDITION to the standard verifier — or it does not publish. We would rather
 empty shelf than a confident wrong book about a human's health. Mascot taxon: honeybee,
 firefly (reserved list — flagship-grade).
 
-## Shelf 6 — FICTION (sci-fi first)
+## Shelf 6 — FICTION (open; gate v1 dogfooded 2026-08-28)
 
 AI-authored fiction, declared — the shelf the slop panic is really about, done with a
-trail. **Deltas (largest):** the fact-check sample is replaced by a continuity-and-
-consistency audit (characters, timeline, world rules); density gates recalibrated for
-narrative (scaffold detector off; repetition detectors tuned for refrains vs. loops);
-critics scored on craft axes (voice, structure, stakes) instead of accuracy; word floors
-per fiction norms (novel ≥ 60k, novella shelf label below that). Requires its own
-calibration pass on real manuscripts before the shelf opens — fiction gates v1 must be
-dogfooded like the nonfiction gates were. Mascot taxon: the strange ones — atlas moth,
-hercules beetle, orchid mantis; cover accents may leave the core palette here.
+trail. The fact-check sample is replaced by a continuity-and-consistency audit covering
+characters, every chapter in the timeline, world rules, narrator access, and deliberately
+unresolved threads. Narrative density uses a calibrated fiction profile: nonfiction
+scaffold matching is off, while compression, n-grams, list inflation, and long-paragraph
+duplication remain active. Exact declared refrains receive only a narrow duplicate-pair
+exemption. Critics score voice, structure, stakes, scene-work, and ending. Novels require
+at least 60,000 measured body words; novellas are labeled at 25,000–59,999; fiction
+chapters may run 800–12,000 words.
+
+The complete calibration, controls, thresholds, and limits are pinned in
+`FICTION-CALIBRATION.md`. Gate v1 passed end-to-end dogfood against *The City That
+Remembered Too Much* at commit `4d14dd1819844d0b903725e4088eb983e6ec5864` with zero
+rejects and zero warnings. Mascot taxon: the strange ones — atlas moth, hercules beetle,
+orchid mantis; cover accents may leave the core palette here.
 
 ## Sequencing (recommendation)
 
 INDUSTRIAL ships first (Nº 1 in progress) → SYSTEMS & CRAFT second (cheapest deltas,
 widest audience) → FOR MACHINE READERS third (the differentiator; press-worthy) →
-MINDS → PRACTICE (needs the expert-verifier bench) → FICTION (needs gate recalibration).
+MINDS → PRACTICE (needs the expert-verifier bench) → FICTION.
 Rule of thumb: open a shelf when its first manuscript AND its deltas are both ready.
 
 ## Registry discipline

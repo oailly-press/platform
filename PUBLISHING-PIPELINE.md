@@ -73,10 +73,15 @@ with the author. Each critic gets the full manuscript and writes a **structured 
   Each finding: location, claim, evidence, severity.
 - **Suggestions** — non-blocking improvements (structure, ordering, missing topics,
   tone). Suggestions are advice; blocking findings are debts.
-- **Fact-check sample:** each critic independently verifies a random 5% of factual claims
-  against the book's cited sources. A claim whose cited source doesn't support it is an
-  automatic blocking finding — this is the anti-hallucination teeth.
-- **Scores** (1–5): accuracy, clarity, completeness-for-tier, density, originality.
+- **Nonfiction fact-check sample:** each critic independently verifies a random 5% of
+  factual claims against the book's cited sources. A claim whose cited source does not
+  support it is an automatic blocking finding.
+- **FICTION continuity sample:** each critic challenges character, timeline, world-rule,
+  narrator-access, and intentional-ambiguity claims from the author audit against the
+  manuscript itself.
+- **Scores** (1–5): nonfiction uses accuracy, clarity, completeness-for-tier, density,
+  and originality; FICTION uses voice, structure, stakes, scene-work, and ending, plus a
+  written density finding.
 
 **Panel verdict:** if ≥ 2 critics judge the book unsalvageable, it dies here (kill +
 cooldown). Otherwise all findings return to the author for **one revision cycle**.
@@ -89,8 +94,9 @@ Same panel where possible. Scope is deliberately narrow — this is a *delta* re
 fresh one (fresh reviews forever = a treadmill; the third pass must converge):
 
 - Verify every blocking finding: resolved, adequately rebutted, or still open.
-- **Regression sampling:** revisions introduce errors; each critic fact-checks a fresh 3%
-  sample weighted toward revised sections.
+- **Regression sampling:** revisions introduce errors; each critic checks a fresh 3%
+  sample weighted toward revised sections, using fact support for nonfiction and
+  continuity/craft consistency for FICTION.
 - Re-score. Produce a **final report card** to the judge: findings ledger (opened/
   resolved/rebutted/still-open), score deltas, and each critic's publish/don't-publish
   recommendation with one paragraph of reasoning.
@@ -134,8 +140,9 @@ to the publisher (rejected ones). **Judges answer for their verdicts in writing,
 Passes 2–3 and the judge run as a **manual SOP over DigitalOcean Spaces** — see
 `REVIEW-SOP.md`. Books live as immutable bundles in a private `oailly-press` bucket;
 pipeline state is a marker object moved through `state/0-pending → 1-critics →
-2-revision → 3-verification → 4-judge → 5-published|rejected` prefixes; critics and the
-judge are run by hand using `templates/critic-review.md` and `templates/judge-verdict.md`.
+2-revision → 3-verification → 4-judge → 5-published|rejected` prefixes; critics use
+`templates/critic-review-fiction.md` for FICTION and `templates/critic-review.md` for
+other shelves, while the judge uses `templates/judge-verdict.md`.
 Only Pass 1 is automated (the gates, run locally before upload). The SOP's transitions
 are shaped like future API calls so v2 automation (Roger models reviewing via API)
 changes the operator, not the process.
@@ -143,8 +150,7 @@ changes the operator, not the process.
 ## 7. What v1 deliberately defers
 
 Payments/royalties and steward payout rails; automated critic recruitment (launch panel
-is hand-configured); fiction (these standards assume nonfiction/technical — fiction needs
-different critics and different density logic); federation/API for third-party portals.
+is hand-configured); federation/API for third-party portals.
 Deferred ≠ rejected; each gets a design doc when the core loop has run once for real.
 
 ## 8. Dogfood plan (make the pipeline real by using it)

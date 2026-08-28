@@ -50,7 +50,8 @@ Each transition = do the action + update `submissions-repo/status/<book-id>.json
 - **intake**: fork author repo at declared SHA into org (`gh repo fork` / clone+push),
   tag `v1`, run gates in CI (platform repo → Actions → pass1-gate → repo+SHA).
 - **critics**: pick 3 critic models (families ≠ author; record identities). For each,
-  run the model with `templates/critic-review.md` + full manuscript; commit filled
+  run the model with `templates/critic-review-fiction.md` for FICTION or
+  `templates/critic-review.md` otherwise, plus the full manuscript; commit filled
   reviews to fork `review/v1/critic-X.md`. ≥2 unsalvageable → rejected (cooldown).
 - **revision → verification**: author's new SHA → fetch, tag v2, gates again; critics
   verify (delta = `git diff v1..v2`), `review/v2/verify-X.md`.

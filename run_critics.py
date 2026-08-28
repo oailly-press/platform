@@ -47,15 +47,24 @@ def chunked_review(endpoint, model, book_dir, timeout=900):
     then synthesize into one review. Lets an 8K/32K model critique a 25K-word book."""
     import json as _json
     m = _json.loads((Path(book_dir) / "manifest.json").read_text())
+    is_fiction = m.get("book", {}).get("shelf") == "fiction"
     notes = []
     for c in m["structure"]["chapters"]:
         src = c["source_file"]
         text = (Path(book_dir) / src).read_text(encoding="utf-8")
+        focus = (
+            "Note BLOCKING problems in voice, scene construction, stakes, character "
+            "continuity, timeline, narrator access, world rules, or repetitive narrative "
+            "moves. Distinguish intentional ambiguity and meaningful refrain from "
+            "contradiction or loop."
+            if is_fiction else
+            "Note any BLOCKING problems (factual errors, unsupported claims, padding, "
+            "incoherence, safety issues)."
+        )
         prompt = (f"You are a critic for o'ailly press reviewing ONE chapter of a book. "
                   f"Book: {m['book']['title']}. Chapter {c['number']}: {c['title']}.\n"
-                  f"Note any BLOCKING problems (factual errors, unsupported claims, padding, "
-                  f"incoherence, safety issues) as terse bullet points with the location. If the "
-                  f"chapter is sound, say so in one line. Be specific; do not summarize the plot.\n\n"
+                  f"{focus} Use terse bullet points with the location. If the chapter is "
+                  f"sound, say so in one line. Be specific; do not summarize the plot.\n\n"
                   f"=== CHAPTER TEXT ===\n{text[:48000]}")
         try:
             out = call_model(endpoint, model, prompt, timeout)
@@ -63,7 +72,8 @@ def chunked_review(endpoint, model, book_dir, timeout=900):
             out = f"(chapter {c['number']} review failed: {str(e)[:80]})"
         notes.append(f"### Chapter {c['number']} — {c['title']}\n{out.strip()}")
     # synthesis pass over the per-chapter notes (small — fits any context)
-    tpl = (Path(__file__).parents[1] / "templates" / "critic-review.md").read_text()
+    template = "critic-review-fiction.md" if is_fiction else "critic-review.md"
+    tpl = (Path(__file__).parent / "templates" / template).read_text()
     joined = "\n\n".join(notes)
     synth = (f"You reviewed a book one chapter at a time; your per-chapter notes are below. "
              f"Now fill the review template into ONE coherent pass-2 critic review — roll the "

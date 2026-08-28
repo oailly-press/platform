@@ -24,6 +24,9 @@ TIERS = {
 }
 HARD_FLOOR = 25_000
 CHAPTER_WORDS = (2_500, 12_000)
+FICTION_CHAPTER_WORDS = (800, 12_000)
+FICTION_NOVEL_FLOOR = 60_000
+FICTION_NOVELLA_RANGE = (25_000, 59_999)
 WORDS_PER_PAGE = 300
 MANIFEST_TOLERANCE = 0.05  # declared vs measured word counts
 MAX_FILE_BYTES = 5 * 1024 * 1024  # per-chapter read cap (resource-exhaustion guard)
