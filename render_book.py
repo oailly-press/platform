@@ -2,6 +2,7 @@
 """Render a book source tree into the static web reader.
 
     .buildenv/bin/python platform/render_book.py <book_dir> <out_dir> [--accent HEX]
+        [--epub URL] [--source URL] [--review URL] [--status STATUS]
 
 Output: <out_dir>/index.html (title page: cover, TOC, provenance) plus one page per
 chapter with prev/next navigation. Pure static HTML — this IS how readers read books on
@@ -204,7 +205,8 @@ def md(text: str) -> str:
         extension_configs={"codehilite": {"guess_lang": False, "noclasses": False}})
 
 
-def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: str = '') -> None:
+def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: str = '',
+           review: str = '', publication_status: str = '') -> None:
     manifest = json.loads((book_dir / "manifest.json").read_text(encoding="utf-8"))
     book, prov = manifest["book"], manifest["provenance"]
     chapters = manifest["structure"]["chapters"]
@@ -241,6 +243,10 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
                   f'<img src="{front_cover}" alt="{book["title"]} — front cover" '
                   f'loading="eager"><span class="opencue">open the book →</span></a>'
                   if has_covers else '')
+    review_url = review or manifest["review"].get("trail_uri") or ''
+    release_status = publication_status or manifest["review"].get("status", "draft")
+    review_display = (f'<a href="{review_url}">{review_url}</a>'
+                      if review_url else "pending publication")
     idx = (cover_open
            + f'<div class="meta">{book.get("series") or "O\'AILLY"} · '
            f'{book["tier"].upper()}'
@@ -250,7 +256,8 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
            f'<div class="prov"><b>WRITTEN BY</b> {written}<br>'
            f'<b>VERIFIED BY</b> {verifier}<br>'
            f'<b>DISCLOSURE</b> {prov["disclosure_statement"]}<br>'
-           f'<b>REVIEW TRAIL</b> {manifest["review"].get("trail_uri") or "pending publication"}</div>'
+           f'<b>PUBLICATION</b> {release_status.upper()}<br>'
+           f'<b>REVIEW TRAIL</b> {review_display}</div>'
            + (f'<div class="dl"><a href="{epub}" download>⬇ EPUB — Kindle &amp; e-readers</a>'
               f'<a href="javascript:window.print()">⎙ Print / save as PDF</a>'
               + (f'<a href="{source}">&lt;/&gt; Raw Markdown — for machines</a>' if source else '')
@@ -273,13 +280,13 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
               "publisher": {"@type": "Organization", "name": "o'ailly press (RogerAI Labs)"},
               "inLanguage": book.get("language", "en"),
               "bookFormat": "https://schema.org/EBook",
-              "creativeWorkStatus": manifest["review"].get("status", "draft"),
+              "creativeWorkStatus": release_status,
               "description": f"{book.get('subtitle','')} — written by machines, verified by humans; full review trail publishes with the book."}
     idx = ('<script type="application/ld+json">' + json.dumps(jsonld) + '</script>') + idx
     aibn_cite = (f'{aibn_rec["aibn_human"]} · ' if aibn_rec else '')
     repo = f'https://github.com/oailly-press/{book_id.split("--", 1)[1]}'
     cite = (f'<div class="prov"><b>CITE</b> {book["title"]} ({", ".join(w["model"] for w in prov["written_by"])}). '
-            f'o\'ailly press, {manifest["review"].get("status","draft")}. '
+            f'o\'ailly press, {release_status}. '
             f'{aibn_cite}https://oailly.com/read/{book_id}/ — cite by AIBN or URL + repo tag.<br>'
             f'<b>FULL TEXT (machines)</b> <a href="book.md">book.md — the whole book, one GET</a><br>'
             f'<b>SOURCE</b> <a href="{repo}">GitHub repo — manifest, chapters &amp; the full review trail</a> '
@@ -338,4 +345,4 @@ if __name__ == "__main__":
     def opt(name, default=''):
         return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
     render(Path(args[0]), Path(args[1]), opt("--accent", ACCENT_DEFAULT),
-           opt("--epub"), opt("--source"))
+           opt("--epub"), opt("--source"), opt("--review"), opt("--status"))
