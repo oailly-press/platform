@@ -20,7 +20,15 @@ from pathlib import Path
 import markdown
 from pygments.formatters import HtmlFormatter
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import aibn as _aibn
+except Exception:
+    _aibn = None
+
 ACCENT_DEFAULT = "#4FD6C3"
+_covers = Path(__file__).resolve().parents[1] / "gh/site-repo/assets/covers"
+SITE_ASSETS = _covers if _covers.is_dir() else None
 
 SHELL = """<!DOCTYPE html>
 <html lang="{lang}" translate="yes">
@@ -75,6 +83,14 @@ nav.pager a{{text-decoration:none;color:var(--fg);font-family:var(--sans);font-w
 nav.pager a span{{display:block;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.12em}}
 nav.pager .next{{text-align:right;margin-left:auto}}
 @media print{{.top,#progress,nav.pager,.dl{{display:none}}body{{background:#fff;color:#000;font-size:11pt}}main{{max-width:100%;padding:0}}a{{color:#000;text-decoration:none}}}}
+/* cover-to-cover: the front cover opens the book, the back cover closes it */
+.coverpage{{display:block;position:relative;margin:0 auto 30px;max-width:560px;text-align:center;text-decoration:none}}
+.coverpage img{{width:100%;height:auto;border-radius:6px;box-shadow:0 18px 60px rgba(0,0,0,.55);border:1px solid var(--line)}}
+.coverpage .opencue{{display:inline-block;margin-top:16px;font-family:var(--mono);font-size:13px;letter-spacing:2px;color:var(--accent);opacity:.85}}
+.coverpage:hover .opencue{{opacity:1}}
+.backcover{{max-width:560px;margin:0 auto;text-align:center}}
+.backcover img{{width:100%;height:auto;border-radius:6px;box-shadow:0 18px 60px rgba(0,0,0,.55);border:1px solid var(--line)}}
+.bc-aibn{{margin:16px 0 4px;font-family:var(--mono);font-size:12px;letter-spacing:1px;color:var(--muted)}}
 /* paginated reader — a real book, flipped page by page */
 .reader{{position:relative;height:calc(100dvh - 168px);min-height:340px;overflow:hidden;margin:6px 0 2px}}
 .reader .pages{{height:100%;column-gap:60px;column-fill:auto;transition:transform .36s cubic-bezier(.3,.72,.3,1);will-change:transform}}
@@ -202,14 +218,34 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
                             book_title_upper=book["title"].upper(), content=content,
                             pyg=pyg)
 
-    # --- title page: cover meta + provenance + TOC
+    # --- book identity: AIBN + cover art (cover-to-cover reader) ---
+    book_id = out_dir.name                    # read/<book_id>/
+    aibn_rec = None
+    if _aibn is not None:
+        try:
+            aibn_rec = next((r for r in _aibn.load_registry()["books"]
+                             if r["book_id"] == book_id), None)
+        except Exception:
+            aibn_rec = None
+    front_cover = f"/assets/covers/{book_id}-front.png"
+    back_cover = f"/assets/covers/{book_id}-back.png"
+    has_covers = (SITE_ASSETS / f"{book_id}-front.png").is_file() if SITE_ASSETS else False
+
+    # --- title page: front cover + cover meta + provenance + TOC
     written = ", ".join(f"{m['model']}" for m in prov["written_by"])
     verifier = prov["verified_by"].get("name") or "—"
     toc = "\n".join(
         f'<li><a href="ch{c["number"]:02d}.html"><span class="n">{c["number"]:02d}</span>'
         f'{c["title"]}</a></li>' for c in chapters)
-    idx = (f'<div class="meta">{book.get("series") or "O\'AILLY"} · '
-           f'{book["tier"].upper()}</div>'
+    cover_open = (f'<a class="coverpage" href="ch01.html" title="open the book">'
+                  f'<img src="{front_cover}" alt="{book["title"]} — front cover" '
+                  f'loading="eager"><span class="opencue">open the book →</span></a>'
+                  if has_covers else '')
+    idx = (cover_open
+           + f'<div class="meta">{book.get("series") or "O\'AILLY"} · '
+           f'{book["tier"].upper()}'
+           + (f' · <a href="/aibn/">{aibn_rec["aibn_human"]}</a>' if aibn_rec else '')
+           + '</div>'
            f'<h1>{book["title"]}</h1><p>{book.get("subtitle", "")}</p>'
            f'<div class="prov"><b>WRITTEN BY</b> {written}<br>'
            f'<b>VERIFIED BY</b> {verifier}<br>'
@@ -240,9 +276,10 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
               "creativeWorkStatus": manifest["review"].get("status", "draft"),
               "description": f"{book.get('subtitle','')} — written by machines, verified by humans; full review trail publishes with the book."}
     idx = ('<script type="application/ld+json">' + json.dumps(jsonld) + '</script>') + idx
+    aibn_cite = (f'{aibn_rec["aibn_human"]} · ' if aibn_rec else '')
     cite = (f'<div class="prov"><b>CITE</b> {book["title"]} ({", ".join(w["model"] for w in prov["written_by"])}). '
             f'o\'ailly press, {manifest["review"].get("status","draft")}. '
-            f'https://oailly.com/read/ — cite by URL + repo tag; no ISBN/DOI yet, and we do not invent them.<br>'
+            f'{aibn_cite}https://oailly.com/read/{book_id}/ — cite by AIBN or URL + repo tag.<br>'
             f'<b>FULL TEXT (machines)</b> <a href="book.md">book.md — the whole book, one GET</a></div>')
     idx = idx + cite
     (out_dir / "index.html").write_text(shell(book["title"], idx), encoding="utf-8")
@@ -251,11 +288,12 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     for i, c in enumerate(chapters):
         text = (book_dir / c["source_file"]).read_text(encoding="utf-8")
         body = md(text)
-        prev_href = f'ch{chapters[i-1]["number"]:02d}.html' if i > 0 else ''
-        next_href = (f'ch{chapters[i+1]["number"]:02d}.html'
-                     if i + 1 < len(chapters) else 'index.html')
-        prev_title = chapters[i - 1]["title"] if i > 0 else 'Contents'
-        next_title = chapters[i + 1]["title"] if i + 1 < len(chapters) else 'Contents'
+        last = i + 1 >= len(chapters)
+        end_href = 'back-cover.html' if has_covers else 'index.html'
+        prev_href = f'ch{chapters[i-1]["number"]:02d}.html' if i > 0 else 'index.html#end'
+        next_href = end_href if last else f'ch{chapters[i+1]["number"]:02d}.html'
+        prev_title = chapters[i - 1]["title"] if i > 0 else 'Cover'
+        next_title = ('Back cover' if has_covers else 'Contents') if last else chapters[i + 1]["title"]
         reader = (
             f'<div class="preader"><i id="pbar"></i></div>'
             f'<div class="reader" data-ch="{c["number"]}" data-prev="{prev_href}" data-next="{next_href}">'
@@ -265,16 +303,31 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
             f'</div>'
             f'<div class="pagebar">'
             f'<div class="grp"><button id="ppv" onclick="return false">‹ '
-            f'{"prev" if i>0 else "contents"}</button>'
+            f'{"prev" if i>0 else "cover"}</button>'
             f'<span class="cnt" id="pcnt">1 / 1</span>'
             f'<button id="pnx" onclick="return false">'
-            f'{"next" if i+1<len(chapters) else "contents"} ›</button></div>'
+            f'{("back cover" if has_covers else "contents") if last else "next"} ›</button></div>'
             f'<div class="grp"><a href="{next_href}">'
-            f'{("next: " + next_title) if i+1<len(chapters) else "back to contents"} →</a></div>'
+            f'{("to the back cover" if has_covers else "back to contents") if last else "next: " + next_title} →</a></div>'
             f'</div>')
         (out_dir / f'ch{c["number"]:02d}.html').write_text(
             shell(f'{c["title"]} — {book["title"]}', reader), encoding="utf-8")
-    print(f"rendered {len(chapters)} chapter(s) + index → {out_dir}")
+
+    # --- back cover: the closing page of the cover-to-cover reader ---
+    if has_covers:
+        last_ch = f'ch{chapters[-1]["number"]:02d}.html'
+        aibn_line = (f'<div class="bc-aibn"><a href="/aibn/">{aibn_rec["aibn_human"]}</a>'
+                     f' · scan on the back cover</div>' if aibn_rec else '')
+        back = (f'<div class="backcover">'
+                f'<img src="{back_cover}" alt="{book["title"]} — back cover" loading="eager">'
+                f'{aibn_line}'
+                f'<div class="pagebar"><div class="grp">'
+                f'<a href="{last_ch}#end">‹ last page</a></div>'
+                f'<div class="grp"><a href="index.html">back to the cover ↺</a></div></div>'
+                f'</div>')
+        (out_dir / "back-cover.html").write_text(
+            shell(f'Back cover — {book["title"]}', back), encoding="utf-8")
+    print(f"rendered {len(chapters)} chapter(s) + covers + index → {out_dir}")
 
 
 if __name__ == "__main__":
