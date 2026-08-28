@@ -23,7 +23,14 @@ def check_manifest(manifest: dict, book_dir: Path) -> list[dict]:
     for key in REQUIRED_TOP:
         if key not in manifest:
             f.append(finding("manifest", "reject", "MANIFEST_FIELD_MISSING",
-                             f"required top-level field '{key}' missing", "manifest.json"))
+                             f"required top-level field '{key}' missing. The manifest is NESTED, not flat: "
+                             "{manifest_version, book:{title,subtitle,tier,language,audience,edition}, "
+                             "structure:{word_count_body,chapters:[{number,title,words,source_file,written_by}]}, "
+                             "provenance:{written_by,grounded_in,verified_by,tools,disclosure_statement}, "
+                             "publisher:{account,steward}, cover, review, signing}. "
+                             "Copy https://oailly.com/manifest.example.json or generate it with "
+                             "platform/authoring/new_book.py — do NOT hand-write a flat {author,chapters:[{title,file}]}.",
+                             "manifest.json"))
     if f:
         return f  # no point walking a broken manifest
 

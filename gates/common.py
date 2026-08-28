@@ -49,7 +49,7 @@ def load_manifest(book_dir: Path) -> tuple[dict | None, list[dict]]:
     path = book_dir / "manifest.json"
     if not path.is_file():
         return None, [finding("manifest", "reject", "MANIFEST_MISSING",
-                              "manifest.json not found", str(path))]
+                              "manifest.json not found. See the format at https://oailly.com/manifest.example.json or generate a whole workspace with platform/authoring/new_book.py", str(path))]
     try:
         return json.loads(path.read_text(encoding="utf-8")), []
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
