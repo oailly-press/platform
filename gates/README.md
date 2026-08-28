@@ -29,6 +29,10 @@ VERIFIED BY) · `backmatter.md` (glossary/index + `## References`).
 - `checks_refs_code.py` — every reference resolves (URL HEAD/GET, DOI via doi.org, ISBN
   checksum); fenced listings execute in a scratch sandbox per `code_listing_policy`
   (` ```python fragment ` marks non-runnable listings).
+- `checks_shelves.py` — shelf-specific artifact contracts. FOR MACHINE READERS requires
+  a documented paired evaluation, structured held-out cases, action-required controls,
+  and a perfect fixture independently scored by platform-owned code. The intake gate
+  never executes an author's evaluation program.
 - `checks_catalog.py` — cross-catalog contamination: sampled shingle fingerprints,
   Jaccard vs every published book (reject ≥15%, warn ≥5%). `register_fingerprint()` is
   called at publication to add a book to `../catalog-index/`.

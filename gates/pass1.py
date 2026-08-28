@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from checks_catalog import check_catalog
 from checks_padding import check_padding
 from checks_refs_code import check_citations, check_code
+from checks_shelves import check_shelf
 from checks_structure import check_manifest, check_structure
 from common import load_manifest
 
@@ -44,6 +45,9 @@ def run(book_dir: Path, offline: bool, no_exec: bool, index_dir: Path) -> dict:
         measured["padding_metrics"] = pad_metrics
         findings += check_citations(manifest, book_dir, offline=offline)
         findings += check_code(manifest, book_dir, no_exec=no_exec)
+        shelf_findings, shelf_metrics = check_shelf(manifest, book_dir)
+        findings += shelf_findings
+        measured["shelf_metrics"] = shelf_metrics
         catalog, _fp = check_catalog(manifest, book_dir, index_dir)
         findings += catalog
 
