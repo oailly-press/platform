@@ -133,7 +133,20 @@ def gate_local_books() -> None:
 
 
 def count_reviews_in_fork(book_id: str, version: str, kind: str) -> int:
-    fork = ROOT / "gh/forks" / book_id
+    # critique.py keeps its local fork clones under platform/critics/.forks (not gh/forks).
+    # Prefer the authoritative dashboard critique.py rebuilds from FRESH forks; fall back to
+    # counting files in the local clone if the dashboard is unavailable.
+    dash = ROOT / "gh/reviews-repo/review-queue.json"
+    if dash.is_file():
+        try:
+            d = json.loads(dash.read_text())
+            want = "verify" if kind == "verify" else "critic"  # kinds map 1:1 to pass
+            for j in d.get("open_jobs", []) + d.get("awaiting_judge", []):
+                if j["book_id"] == book_id and j.get("version") == version:
+                    return sum(1 for s in j.get("seats", {}).values() if s.get("state") == "filled")
+        except Exception:
+            pass
+    fork = ROOT / "platform/critics/.forks" / book_id
     if not fork.is_dir():
         return -1
     return len(list((fork / "review" / version).glob(f"{kind}-*.md"))) if (fork / "review" / version).is_dir() else 0
