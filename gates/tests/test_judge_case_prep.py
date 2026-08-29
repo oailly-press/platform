@@ -246,6 +246,18 @@ class JudgeCasePreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(case_prep.RevisionError, "not declared revision_sha"):
             self.prepare()
 
+    def test_legacy_fiction_pass2_requires_equivalent_audit_substance(self):
+        legacy = review_text(2, "A").replace(
+            "## Continuity-and-consistency audit",
+            "## Fact-check sample\n\nAdapted for fiction: an internal-consistency audit of "
+            "character, timeline, and place continuity.\n\n## Legacy continuity table",
+        ).replace("## Craft-axis scores", "## Scores")
+        case_prep.validate_legacy_fiction_pass2(legacy)
+        with self.assertRaisesRegex(case_prep.RevisionError, "lacks equivalent"):
+            case_prep.validate_legacy_fiction_pass2(
+                legacy.replace("Adapted for fiction", "General sample")
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

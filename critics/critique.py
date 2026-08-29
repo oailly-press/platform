@@ -600,13 +600,13 @@ def cmd_take(a):
             text = produce_via_endpoint(
                 fork, a.endpoint, a.served_model, pass_no, version, a.chunked
             )
+        res = do_submit(a.book, seat, text, a.actor)
     except SystemExit:
         do_release(a.book, seat)
         raise
     except Exception as e:
         do_release(a.book, seat)
         die(f"review production failed ({str(e)[:160]}); released seat {seat}")
-    res = do_submit(a.book, seat, text, a.actor)
     _report_submit(res, a.book)
 
 

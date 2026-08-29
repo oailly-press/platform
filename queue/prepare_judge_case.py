@@ -83,6 +83,30 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def validate_legacy_fiction_pass2(text: str) -> None:
+    """Accept only the substantive fiction adaptation used before FICTION headings shipped.
+
+    This does not apply to new submissions or Pass 3. The immutable early panels used the
+    general template but explicitly converted its fact-check into an internal-consistency
+    audit and discussed the same craft/density axes. Preserve and disclose that history.
+    """
+    C.validate_review(text, 2, False)
+    lower = text.lower()
+    required_evidence = ("internal-consistency", "character", "timeline", "density", "voice")
+    missing = [token for token in required_evidence if token not in lower]
+    if not any(token in lower for token in ("adapted for fiction", "fiction adaptation")):
+        missing.append("explicit fiction adaptation")
+    if not any(token in lower for token in ("structure", "pacing")):
+        missing.append("structure/pacing")
+    if not any(token in lower for token in ("ending", "denouement", "thematic payoff", "lands")):
+        missing.append("ending/payoff")
+    if missing:
+        raise RevisionError(
+            "legacy Pass-2 fiction review lacks equivalent audit evidence: "
+            + ", ".join(missing)
+        )
+
+
 def validate_panel(fork: Path, book_id: str, version: str, pass_no: int) -> tuple[dict, dict]:
     review_dir = fork / "review" / version
     seats_file = review_dir / "SEATS.json"
@@ -122,9 +146,18 @@ def validate_panel(fork: Path, book_id: str, version: str, pass_no: int) -> tupl
         if not path.is_file():
             raise RevisionError(f"Pass-{pass_no} review {seat} is missing")
         text = path.read_text(encoding="utf-8", errors="replace")
+        legacy_fiction = (
+            is_fiction
+            and pass_no == 2
+            and "## Fact-check sample" in text
+            and "## Continuity-and-consistency audit" not in text
+        )
         try:
-            C.validate_review(text, pass_no, is_fiction)
-        except SystemExit as exc:
+            if legacy_fiction:
+                validate_legacy_fiction_pass2(text)
+            else:
+                C.validate_review(text, pass_no, is_fiction)
+        except (SystemExit, RevisionError) as exc:
             raise RevisionError(f"Pass-{pass_no} review {seat} is invalid: {exc}") from exc
         tallied = C.tally_verdict(text, pass_no)
         recorded = seats["seats"][seat].get("verdict")
@@ -148,6 +181,7 @@ def assemble_report_card(
     v1 = git(fork, "rev-parse", "v1^{commit}").stdout.strip()
     response = (fork / "response-to-findings.md").read_text(encoding="utf-8")
     tally = C.panel_tally(pass3_seats)
+    legacy_pass2 = all("## Fact-check sample" in review["text"] for review in pass2_reviews.values())
     lines = [
         f"# Final report card — {book_id} {version}",
         "",
@@ -160,6 +194,12 @@ def assemble_report_card(
         f"- {version} commit: `{revision_sha}`",
         f"- author response SHA-256: `{_digest(response)}`",
         "- Pass-2 reviews: 3; Pass-3 verification reviews: 3",
+        "- Pass-2 format: "
+        + (
+            "legacy general headings with explicit fiction-adapted internal-consistency audits"
+            if legacy_pass2
+            else "current shelf-specific FICTION template"
+        ),
         "",
         "## Panel recommendation",
         "",
