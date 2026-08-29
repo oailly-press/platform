@@ -115,6 +115,11 @@ class ReleaseVerifyTests(unittest.TestCase):
         problems = release_verify.verify(self.source, self.rendered)
         self.assertTrue(any("epub: spine" in problem for problem in problems), problems)
 
+    def test_required_covers_fail_closed_when_renderer_omits_them(self):
+        problems = release_verify.verify(self.source, self.rendered, require_covers=True)
+        self.assertIn("web: required back-cover.html is missing", problems)
+        self.assertIn("web: index does not expose the required front cover", problems)
+
 
 if __name__ == "__main__":
     unittest.main()

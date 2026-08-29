@@ -28,7 +28,7 @@ except Exception:
     _aibn = None
 
 ACCENT_DEFAULT = "#4FD6C3"
-_covers = Path(__file__).resolve().parents[1] / "gh/site-repo/assets/covers"
+_covers = Path(__file__).resolve().parent.parent / "site-repo" / "assets" / "covers"
 SITE_ASSETS = _covers if _covers.is_dir() else None
 
 SHELL = """<!DOCTYPE html>
@@ -215,7 +215,8 @@ def md(text: str) -> str:
 
 
 def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: str = '',
-           review: str = '', publication_status: str = '') -> None:
+           review: str = '', publication_status: str = '', version: str = '',
+           revision_sha: str = '') -> None:
     manifest = json.loads((book_dir / "manifest.json").read_text(encoding="utf-8"))
     book, prov = manifest["book"], manifest["provenance"]
     chapters = manifest["structure"]["chapters"]
@@ -249,7 +250,11 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
             aibn_rec = None
     front_cover = f"/assets/covers/{book_id}-front.png"
     back_cover = f"/assets/covers/{book_id}-back.png"
-    has_covers = (SITE_ASSETS / f"{book_id}-front.png").is_file() if SITE_ASSETS else False
+    has_covers = bool(
+        SITE_ASSETS
+        and (SITE_ASSETS / f"{book_id}-front.png").is_file()
+        and (SITE_ASSETS / f"{book_id}-back.png").is_file()
+    )
 
     canonical_sections = []
     for source_name, output_name, label in (
@@ -285,6 +290,20 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     # --- title page: front cover + cover meta + provenance + TOC
     written = ", ".join(f"{m['model']}" for m in prov["written_by"])
     verifier = prov["verified_by"].get("name") or "—"
+    release_status = publication_status or manifest["review"].get("status", "draft")
+    release_attestation = ""
+    if release_status.lower() == "published":
+        identity = (
+            f" Version {version}, exact source commit {revision_sha}."
+            if version and revision_sha else ""
+        )
+        release_attestation = (
+            "## Release Attestation\n\n"
+            "The provenance text above is the immutable author snapshot and records the "
+            "pipeline state at handoff. Publication subsequently completed independent "
+            f"verification and a named-human signed verdict.{identity} The signed decision "
+            f"and complete review evidence are available at {review or 'the public review trail'}."
+        )
     toc_prefix = "\n".join(
         f'<li><a href="{section["output"]}"><span class="n">§</span>'
         f'{section["title"]}</a></li>'
@@ -302,7 +321,6 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
                   f'loading="eager"><span class="opencue">open the book →</span></a>'
                   if has_covers else '')
     review_url = review or manifest["review"].get("trail_uri") or ''
-    release_status = publication_status or manifest["review"].get("status", "draft")
     review_display = (f'<a href="{review_url}">{review_url}</a>'
                       if review_url else "pending publication")
     idx = (cover_open
@@ -314,7 +332,9 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
            f'<div class="prov"><b>WRITTEN BY</b> {written}<br>'
            f'<b>VERIFIED BY</b> {verifier}<br>'
            f'<b>DISCLOSURE</b> {prov["disclosure_statement"]}<br>'
-           f'<b>PUBLICATION</b> {release_status.upper()}<br>'
+           + (f'<b>RELEASE ATTESTATION</b> {md(release_attestation)}<br>'
+              if release_attestation else '')
+           + f'<b>PUBLICATION</b> {release_status.upper()}<br>'
            f'<b>REVIEW TRAIL</b> {review_display}</div>'
            + (f'<div class="dl"><a href="{epub}" download>⬇ EPUB — Kindle &amp; e-readers</a>'
               f'<a href="javascript:window.print()">⎙ Print / save as PDF</a>'
@@ -328,6 +348,8 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
         fp = book_dir / name
         if fp.exists():
             full.append(f"\n---\n\n{fp.read_text(encoding='utf-8')}")
+            if name == "provenance.md" and release_attestation:
+                full.append(f"\n\n{release_attestation}\n")
     for c in chapters:
         full.append(f"\n---\n\n{(book_dir / c['source_file']).read_text(encoding='utf-8')}\n")
     if backmatter_path.exists():
@@ -357,6 +379,8 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     # --- canonical pages: provenance → front matter → chapters → back matter ---
     for i, section in enumerate(canonical_sections):
         body = md(section["source"].read_text(encoding="utf-8"))
+        if section["key"] == "provenance" and release_attestation:
+            body += md(release_attestation)
         last = i + 1 >= len(canonical_sections)
         end_href = 'back-cover.html' if has_covers else 'index.html'
         prev_href = canonical_sections[i - 1]["output"] if i > 0 else 'index.html#end'
@@ -407,4 +431,5 @@ if __name__ == "__main__":
     def opt(name, default=''):
         return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
     render(Path(args[0]), Path(args[1]), opt("--accent", ACCENT_DEFAULT),
-           opt("--epub"), opt("--source"), opt("--review"), opt("--status"))
+           opt("--epub"), opt("--source"), opt("--review"), opt("--status"),
+           opt("--version"), opt("--revision-sha"))

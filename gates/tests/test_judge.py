@@ -216,6 +216,7 @@ class JudgePreflightTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "front cover is missing"):
                 judge.validate_release_inputs(self.book, "v2", self.revision_sha)
             (site / "assets" / "covers" / f"{self.book}-front.png").write_bytes(b"x" * 101)
+            (site / "assets" / "covers" / f"{self.book}-back.png").write_bytes(b"x" * 101)
             judge.validate_release_inputs(self.book, "v2", self.revision_sha)
             (subs / "status" / f"{self.book}.json").write_text(
                 json.dumps({"book_id": self.book, "state": "3-verification"}),

@@ -8,6 +8,7 @@ import types
 import unittest
 from html import escape as html_escape
 from pathlib import Path
+from unittest import mock
 
 
 PLATFORM = Path(__file__).resolve().parents[2]
@@ -40,6 +41,12 @@ spec.loader.exec_module(render_book)
 
 
 class WebRenderTests(unittest.TestCase):
+    def test_cover_path_uses_sibling_site_checkout(self):
+        self.assertEqual(
+            render_book._covers,
+            PLATFORM.parent / "site-repo" / "assets" / "covers",
+        )
+
     def test_canonical_sections_are_rendered_in_cover_to_cover_order(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -75,7 +82,15 @@ class WebRenderTests(unittest.TestCase):
             ):
                 (book / name).write_text(marker, encoding="utf-8")
 
-            render_book.render(book, output, "#123456")
+            render_book.render(
+                book,
+                output,
+                "#123456",
+                review="https://example.invalid/review",
+                publication_status="published",
+                version="v3",
+                revision_sha="a" * 40,
+            )
 
             expected = {
                 "index.html", "provenance.html", "frontmatter.html", "ch01.html",
@@ -105,6 +120,45 @@ class WebRenderTests(unittest.TestCase):
                           (output / "ch02.html").read_text(encoding="utf-8"))
             self.assertIn('data-prev="ch02.html" data-next="index.html"',
                           (output / "backmatter.html").read_text(encoding="utf-8"))
+            self.assertIn(
+                "Release Attestation",
+                (output / "provenance.html").read_text(encoding="utf-8"),
+            )
+            self.assertIn("exact source commit " + "a" * 40, full)
+            self.assertIn("PUBLICATION</b> PUBLISHED", index)
+
+    def test_front_and_back_covers_are_both_required_for_cover_navigation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            book = root / "book"
+            output = root / "read" / "publisher--book"
+            covers = root / "covers"
+            book.mkdir()
+            covers.mkdir()
+            manifest = {
+                "book": {"title": "Covered", "language": "en", "tier": "standard"},
+                "structure": {"chapters": [
+                    {"number": 1, "title": "One", "source_file": "ch01.md"}
+                ]},
+                "provenance": {
+                    "written_by": [{"model": "test-model"}],
+                    "verified_by": {"name": "Test Human"},
+                    "disclosure_statement": "Test disclosure.",
+                },
+                "review": {"status": "published", "trail_uri": None},
+            }
+            (book / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            (book / "ch01.md").write_text("chapter", encoding="utf-8")
+            (covers / "publisher--book-front.png").write_bytes(b"front")
+            (covers / "publisher--book-back.png").write_bytes(b"back")
+            with mock.patch.object(render_book, "SITE_ASSETS", covers):
+                render_book.render(book, output, "#123456")
+            self.assertTrue((output / "back-cover.html").is_file())
+            self.assertIn("publisher--book-front.png", (output / "index.html").read_text())
+            self.assertIn(
+                'data-next="back-cover.html"',
+                (output / "ch01.html").read_text(encoding="utf-8"),
+            )
 
 
 if __name__ == "__main__":

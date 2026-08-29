@@ -56,7 +56,15 @@ class EpubBuildTests(unittest.TestCase):
             (root / "backmatter.md").write_text("# Back Matter", encoding="utf-8")
             output = root / "book.epub"
 
-            build_epub.build(root, output, None)
+            build_epub.build(
+                root,
+                output,
+                None,
+                "published",
+                "https://example.invalid/review",
+                "v3",
+                "a" * 40,
+            )
 
             with zipfile.ZipFile(output) as archive:
                 self.assertIsNone(archive.testzip())
@@ -72,6 +80,14 @@ class EpubBuildTests(unittest.TestCase):
                 self.assertEqual(
                     ["titlepage", "provenance", "frontmatter", "ch01", "backmatter"],
                     spine,
+                )
+                self.assertIn(
+                    b"Release Attestation",
+                    archive.read("OEBPS/provenance.xhtml"),
+                )
+                self.assertIn(
+                    ("exact source commit " + "a" * 40).encode(),
+                    archive.read("OEBPS/titlepage.xhtml"),
                 )
                 for name in archive.namelist():
                     if name.endswith((".xhtml", ".opf", ".xml")):

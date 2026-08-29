@@ -2,6 +2,7 @@
 """Build a Kindle-compatible EPUB3 from a book source tree. Stdlib + markdown only.
 
     .buildenv/bin/python platform/build_epub.py <book_dir> <out.epub> [--cover PNG]
+        [--status published --review URL --version vN --revision-sha SHA]
 """
 
 from __future__ import annotations
@@ -41,7 +42,15 @@ def md(text: str) -> str:
     return markdown.markdown(text, extensions=["tables", "fenced_code"])
 
 
-def build(book_dir: Path, out: Path, cover: Path | None) -> None:
+def build(
+    book_dir: Path,
+    out: Path,
+    cover: Path | None,
+    release_status: str = "",
+    review_url: str = "",
+    version: str = "",
+    revision_sha: str = "",
+) -> None:
     m = json.loads((book_dir / "manifest.json").read_text())
     book, prov = m["book"], m["provenance"]
     chapters = m["structure"]["chapters"]
@@ -52,6 +61,19 @@ def build(book_dir: Path, out: Path, cover: Path | None) -> None:
     authors_xml = escape(authors)
     verifier = escape(prov["verified_by"].get("name") or "pending")
     disclosure = escape(prov["disclosure_statement"])
+    release_attestation = ""
+    if release_status.lower() == "published":
+        identity = (
+            f" Version {version}, exact source commit {revision_sha}."
+            if version and revision_sha else ""
+        )
+        release_attestation = (
+            "<h2>Release Attestation</h2><p>The provenance text in this immutable author "
+            "snapshot records the pipeline state at handoff. Publication subsequently "
+            "completed independent verification and a named-human signed verdict."
+            f"{escape(identity)} The signed decision and complete review evidence are "
+            f"available at {escape(review_url or 'the public review trail')}.</p>"
+        )
 
     items, spine, navlis = [], [], []
     docs: list[tuple[str, str]] = []
@@ -61,7 +83,7 @@ def build(book_dir: Path, out: Path, cover: Path | None) -> None:
                  f"<p><b>VERIFIED BY</b> {verifier}</p>"
                  f"<p><b>DISCLOSURE</b> {disclosure}</p>"
                  f"<p><b>PROVENANCE &amp; REVIEW TRAIL</b> https://oailly.com — the full "
-                 f"review record publishes with this book.</p></div>")
+                 f"review record publishes with this book.</p></div>{release_attestation}")
     docs.append(("titlepage.xhtml", XHTML.format(title=title, body=prov_body)))
     navlis.append('<li><a href="titlepage.xhtml">Title &amp; Provenance</a></li>')
 
@@ -72,7 +94,10 @@ def build(book_dir: Path, out: Path, cover: Path | None) -> None:
         path = book_dir / source
         if path.exists():
             filename = source.replace(".md", ".xhtml")
-            docs.append((filename, XHTML.format(title=label, body=md(path.read_text()))))
+            body = md(path.read_text())
+            if source == "provenance.md":
+                body += release_attestation
+            docs.append((filename, XHTML.format(title=label, body=body)))
             navlis.append(f'<li><a href="{filename}">{label}</a></li>')
 
     for c in chapters:
@@ -139,4 +164,15 @@ def build(book_dir: Path, out: Path, cover: Path | None) -> None:
 
 if __name__ == "__main__":
     cover = Path(sys.argv[sys.argv.index("--cover") + 1]) if "--cover" in sys.argv else None
-    build(Path(sys.argv[1]), Path(sys.argv[2]), cover)
+    def opt(name: str) -> str:
+        return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else ""
+
+    build(
+        Path(sys.argv[1]),
+        Path(sys.argv[2]),
+        cover,
+        opt("--status"),
+        opt("--review"),
+        opt("--version"),
+        opt("--revision-sha"),
+    )

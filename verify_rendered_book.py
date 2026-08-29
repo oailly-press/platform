@@ -63,12 +63,18 @@ def _local_target(rendered: Path, page: Path, href: str) -> Path | None:
     return page.parent / relative
 
 
-def verify_web(source: Path, rendered: Path, sections) -> list[str]:
+def verify_web(source: Path, rendered: Path, sections, require_covers: bool = False) -> list[str]:
     problems: list[str] = []
     required = {"index.html", "book.md", "book.epub"} | {name for name, _, _ in sections}
     missing = sorted(name for name in required if not (rendered / name).is_file())
     if missing:
         problems.append(f"web: missing required artifacts {missing}")
+    if require_covers:
+        if not (rendered / "back-cover.html").is_file():
+            problems.append("web: required back-cover.html is missing")
+        index = rendered / "index.html"
+        if index.is_file() and "-front.png" not in index.read_text(encoding="utf-8"):
+            problems.append("web: index does not expose the required front cover")
 
     html_pages = sorted(rendered.glob("*.html"))
     for page in html_pages:
@@ -193,21 +199,29 @@ def verify_epub(rendered: Path, expected_ids: list[str]) -> list[str]:
     return problems
 
 
-def verify(source: Path, rendered: Path) -> list[str]:
+def verify(source: Path, rendered: Path, require_covers: bool = False) -> list[str]:
     try:
         manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         return [f"source: cannot load manifest.json: {error}"]
     sections = canonical_sections(manifest, source)
     expected_ids = ["titlepage"] + [section_id for _, _, section_id in sections]
-    return verify_web(source, rendered, sections) + verify_epub(rendered, expected_ids)
+    return verify_web(source, rendered, sections, require_covers) + verify_epub(
+        rendered, expected_ids
+    )
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print("usage: verify_rendered_book.py <book_source_dir> <rendered_dir>", file=sys.stderr)
+    if len(sys.argv) not in (3, 4) or (len(sys.argv) == 4 and sys.argv[3] != "--require-covers"):
+        print(
+            "usage: verify_rendered_book.py <book_source_dir> <rendered_dir> "
+            "[--require-covers]",
+            file=sys.stderr,
+        )
         return 2
-    problems = verify(Path(sys.argv[1]), Path(sys.argv[2]))
+    problems = verify(
+        Path(sys.argv[1]), Path(sys.argv[2]), require_covers="--require-covers" in sys.argv
+    )
     if problems:
         print(f"RELEASE VERIFY — FAIL ({len(problems)} problem(s))")
         for problem in problems:
