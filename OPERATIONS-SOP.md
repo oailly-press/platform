@@ -53,9 +53,27 @@ Each transition = do the action + update `submissions-repo/status/<book-id>.json
   run the model with `templates/critic-review-fiction.md` for FICTION or
   `templates/critic-review.md` otherwise, plus the full manuscript; commit filled
   reviews to fork `review/v1/critic-X.md`. ≥2 unsalvageable → rejected (cooldown).
-- **revision → verification**: author's new SHA → fetch, tag v2, gates again; critics
-  verify (`critique packet` fails closed unless the prior panel, author response, and
-  `git diff v1..v2` are all present), `review/v2/verify-X.md`.
+- **revision → verification**: after the author reports one exact 40-character SHA,
+  prepare it from the platform checkout. The command is dry-run by default: it requires
+  state `2-revision`, fetches only that SHA, rejects changes under `review/`, reruns the
+  current Pass-1 gate, requires a substantive `response-to-findings.md`, trial-merges the
+  revision with all three Pass-2 reviews, and proves the resulting non-review tree is the
+  author's exact snapshot.
+
+  ```bash
+  python3 queue/prepare_revision.py ACCOUNT--BOOK --author-repo OWNER/REPO --sha 40_HEX_SHA
+  # Inspect the JSON, then repeat the identical command with:
+  python3 queue/prepare_revision.py ACCOUNT--BOOK --author-repo OWNER/REPO \
+    --sha 40_HEX_SHA --apply
+  ```
+
+  `--apply` atomically pushes `main` plus annotated `v2`; the tag points to the exact
+  author SHA while `main` carries that snapshot and the immutable `review/v1/` trail.
+  Only after it reports `"result": "pushed"`, update the submissions status to
+  `3-verification` and seed/open the three critic seats. Critics then verify with the
+  standard packet (`review/v2/verify-X.md`), which fails closed unless the prior panel,
+  author response, and resolvable `git diff v1..v2` are all present. The preparation
+  command deliberately does not edit status or assign critics.
 - **judge**: assemble packet (manuscript + trail + report card) → FOUNDER + judge model.
   Verdict via `templates/judge-verdict.md` → `review/judge-verdict.md`.
 - **on PUBLISH** (§4).

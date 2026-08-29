@@ -272,6 +272,7 @@ class FictionShelfTests(unittest.TestCase):
         packet = result.stdout
         self.assertIn("Continuity-and-consistency audit", packet)
         self.assertIn("voice: · structure: · stakes:", packet)
+        self.assertIn("Only reviewer-directed content counts", packet)
         self.assertNotIn("Fact-check sample", packet)
 
 

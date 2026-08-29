@@ -1,5 +1,21 @@
 # Platform project log
 
+## 2026-08-28 — Exact-SHA revision ingestion hardened
+
+- Added a fail-closed, dry-run-first revision preparer for the previously manual
+  `2-revision` → `3-verification` boundary.
+- It fetches the author's declared 40-character SHA, requires append-only descent from
+  `v1`, prohibits author changes to `review/`, reruns Pass 1, and requires a substantive
+  response to the panel before it will construct a candidate.
+- The trial merge must preserve exactly three Pass-2 reviews and reproduce the author's
+  tree byte-for-byte outside the publisher review namespace. `v2` points at the exact
+  author snapshot; `main` retains that snapshot and the review trail.
+- Live mutation requires an explicit `--apply` and uses one atomic push for `main` and
+  the annotated `v2` tag. Status transition and Pass-3 critic assignment remain separate
+  operator actions, preventing a preparation command from crossing a judgment boundary.
+- Added local Git regressions for mutation-free dry runs, successful atomic application,
+  exact tagged provenance, preserved reviews, namespace tampering, and state validation.
+
 ## 2026-08-28 — Shelf-aware critic and Pass-3 evidence hardening
 
 - Consolidated the duplicated endpoint critic runner into one implementation used by
