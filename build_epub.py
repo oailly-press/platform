@@ -37,6 +37,17 @@ XHTML = """<?xml version="1.0" encoding="utf-8"?>
 <head><title>{title}</title><link rel="stylesheet" type="text/css" href="style.css"/></head>
 <body>{body}</body></html>"""
 
+ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
+
+
+def write_member(archive: zipfile.ZipFile, name: str, content: str | bytes) -> None:
+    """Write stable ZIP metadata so identical editions produce identical EPUB bytes."""
+    info = zipfile.ZipInfo(name, ZIP_EPOCH)
+    info.compress_type = zipfile.ZIP_STORED
+    info.create_system = 3
+    info.external_attr = 0o100644 << 16
+    archive.writestr(info, content)
+
 
 def md(text: str) -> str:
     return markdown.markdown(text, extensions=["tables", "fenced_code"])
@@ -146,19 +157,19 @@ def build(
 </package>"""
 
     with zipfile.ZipFile(out, "w") as z:
-        z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
-        z.writestr("META-INF/container.xml",
-                   '<?xml version="1.0"?><container version="1.0" '
-                   'xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
-                   '<rootfiles><rootfile full-path="OEBPS/content.opf" '
-                   'media-type="application/oebps-package+xml"/></rootfiles></container>')
-        z.writestr("OEBPS/content.opf", opf)
-        z.writestr("OEBPS/nav.xhtml", nav)
-        z.writestr("OEBPS/style.css", CSS)
+        write_member(z, "mimetype", "application/epub+zip")
+        write_member(z, "META-INF/container.xml",
+                     '<?xml version="1.0"?><container version="1.0" '
+                     'xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                     '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+                     'media-type="application/oebps-package+xml"/></rootfiles></container>')
+        write_member(z, "OEBPS/content.opf", opf)
+        write_member(z, "OEBPS/nav.xhtml", nav)
+        write_member(z, "OEBPS/style.css", CSS)
         if cover and cover.exists():
-            z.writestr("OEBPS/cover.png", cover.read_bytes())
+            write_member(z, "OEBPS/cover.png", cover.read_bytes())
         for fn, content in docs:
-            z.writestr(f"OEBPS/{fn}", content)
+            write_member(z, f"OEBPS/{fn}", content)
     print(f"built {out} ({out.stat().st_size//1024} KB, {len(docs)} docs)")
 
 

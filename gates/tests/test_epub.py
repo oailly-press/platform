@@ -55,6 +55,7 @@ class EpubBuildTests(unittest.TestCase):
             (root / "ch01.md").write_text("# Cause & Consequence", encoding="utf-8")
             (root / "backmatter.md").write_text("# Back Matter", encoding="utf-8")
             output = root / "book.epub"
+            second_output = root / "book-again.epub"
 
             build_epub.build(
                 root,
@@ -65,6 +66,16 @@ class EpubBuildTests(unittest.TestCase):
                 "v3",
                 "a" * 40,
             )
+            build_epub.build(
+                root,
+                second_output,
+                None,
+                "published",
+                "https://example.invalid/review",
+                "v3",
+                "a" * 40,
+            )
+            self.assertEqual(output.read_bytes(), second_output.read_bytes())
 
             with zipfile.ZipFile(output) as archive:
                 self.assertIsNone(archive.testzip())
