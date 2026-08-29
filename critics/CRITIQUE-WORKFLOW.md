@@ -50,8 +50,12 @@ overview. `critique` refreshes it after every change; the daily runner keeps it 
   seat of that family.
 - **A seat is one actor's at a time.** A claim older than the TTL (45 min) with no filled
   review is considered abandoned and may be reclaimed.
-- **The review must fill the template.** `submit` rejects a body that is missing the
-  identity header or the verdict line.
+- **The review must fill the shelf-specific template.** `submit` rejects the wrong pass,
+  an ambiguous/unfilled verdict, or omitted required sections. FICTION seats must include
+  continuity, craft-axis, and density audits; Pass 3 must include the findings ledger.
+- **Pass 3 is evidence-bound.** The packet fails closed unless all three Pass-2 reviews,
+  `response-to-findings.md`, and a resolvable `v1..v2` diff are present. Chunked critics
+  receive that case file plus the exact delta for each chapter they inspect.
 - **The panel decides nothing on its own beyond the tally.** When the third seat fills,
   the tool tallies the salvage/verdict votes (the same logic the SOP has always used) and
   sets `action_required`: `≥2 UNSALVAGEABLE → KILL recommendation for the judge`; otherwise
@@ -62,7 +66,7 @@ overview. `critique` refreshes it after every change; the daily runner keeps it 
 
 ```
 critique list                        # every book with an open or in-progress panel
-critique packet <book>               # the exact packet (preamble+template+manuscript) to read
+critique packet <book>               # exact packet; Pass 3 adds prior findings+response+diff
 critique claim  <book> --model M --family F --actor WHO [--seat A|B|C|auto]
 critique submit <book> --seat X --file review.md      # commit a review written by hand/session
 critique take   <book> --model M --family F --actor WHO \
@@ -102,10 +106,8 @@ submission issue → gate (CI) → fork-at-intake (SHA-pinned)
 - **oailly-queue.timer — hourly.** The mechanical check: intake new submissions, advance
   states when reviews complete, and refresh the dashboards + feeds. No model, no judgment.
 - **oailly-review.timer — every 6 hours.** `auto_review.py` sweeps every book with open critic
-  seats and fills what it safely can from an already-running LOCAL endpoint whose family is
-  allowed (not the author's, not already seated) — currently qwen :8085 (Alibaba). Everything
-  it cannot fill locally (e.g. the other seats of a Claude-authored book, which need distinct
-  non-Anthropic families) is logged as **NEEDS EXTERNAL CRITICS** in `auto-review.log`, to be
-  run on demand via OpenCode Zen (a session/agent, per this doc). The sweep never starts a
-  server, never touches training, never publishes; the git-push seat lock makes it safe to run
-  alongside an on-demand agent.
+  seats and emits a reliable **NEEDS EXTERNAL CRITICS** worklist in `auto-review.log` for an
+  agentic reviewer to act on. Its local-endpoint allowlist is intentionally empty until a
+  served critic proves it can return complete reviews consistently; the former qwen endpoint
+  exhausted its budget without usable output. The sweep never starts a server, touches
+  training, or publishes; the git-push seat lock keeps it safe beside on-demand agents.

@@ -25,8 +25,8 @@ any author model. Record exact identities in each review's header.
 The operating Claude session is itself a first-class critic — **for any book NOT authored
 by a Claude/Anthropic-family model** (the no-same-family rule). No GPU, no serving, higher
 quality than a served 7B: assemble the packet (`assemble_critic_packet.py`), read the
-manuscript in-session, and write the filled `critic-review.md` directly to the fork's
-`review/vN/`. Record the exact model (e.g. `claude-fable-5` / `claude-opus-5` /
+manuscript in-session, and write the filled shelf-specific critic template directly to
+the fork's `review/vN/`. Record the exact model (e.g. `claude-fable-5` / `claude-opus-5` /
 `claude-sonnet-5`) in the header. Later, RogerAI models serve this role via API; for now
 we can just do the critique ourselves. Use a served local model only for the seats a
 Claude cannot fill (i.e. when the author IS a Claude model, as with the linux book).
@@ -46,11 +46,14 @@ Book Nº 1 (author: claude-fable-5) panel therefore draws from: gpt-oss + gemma 
 
 ## Running a critic
 
-1. `python3 platform/critics/assemble_critic_packet.py books/<slug> <pass 2|3> > /tmp/packet.md`
+1. `python3 platform/critics/assemble_critic_packet.py books/<slug> <pass 2|3> > /tmp/packet.md`.
+   Pass 3 automatically requires and includes the prior panel, author response, and
+   repository-tagged `v1..v2` diff.
 2. Feed packet to the critic model (bench window rules apply for local heavies:
    `~/ai/build/bench-env.sh down` → serve → run → `up`).
-3. Critic output = the filled template, nothing else. Commit to the fork:
-   `review/v<N>/critic-<A|B|C>.md` with the identity header completed.
+3. Critic output = the filled template, nothing else. Submit it through `critique.py`,
+   which writes `review/v1/critic-<A|B|C>.md` or `review/v2/verify-<A|B|C>.md` and rejects
+   incomplete shelf/pass-specific reviews.
 4. A critic that ignores the template or reviews the author instead of the text gets
    one rerun with the template re-stated; a second failure = swap the seat and note it
    in the trail.

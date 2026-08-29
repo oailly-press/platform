@@ -54,7 +54,8 @@ Each transition = do the action + update `submissions-repo/status/<book-id>.json
   `templates/critic-review.md` otherwise, plus the full manuscript; commit filled
   reviews to fork `review/v1/critic-X.md`. ≥2 unsalvageable → rejected (cooldown).
 - **revision → verification**: author's new SHA → fetch, tag v2, gates again; critics
-  verify (delta = `git diff v1..v2`), `review/v2/verify-X.md`.
+  verify (`critique packet` fails closed unless the prior panel, author response, and
+  `git diff v1..v2` are all present), `review/v2/verify-X.md`.
 - **judge**: assemble packet (manuscript + trail + report card) → FOUNDER + judge model.
   Verdict via `templates/judge-verdict.md` → `review/judge-verdict.md`.
 - **on PUBLISH** (§4).

@@ -1,5 +1,27 @@
 # Platform project log
 
+## 2026-08-28 — Shelf-aware critic and Pass-3 evidence hardening
+
+- Consolidated the duplicated endpoint critic runner into one implementation used by
+  both the self-service workflow and the compatibility entry point. This repairs the
+  automated `--chunked` path, which previously imported a copy with no chunked reviewer.
+- Made chunked review pass-aware. Pass 2 performs a full chapter audit; Pass 3 receives
+  the prior panel, author response, revised chapter, and exact per-chapter `v1..v2` delta
+  before producing a findings ledger and publication recommendation.
+- Made Pass-3 packet assembly fail closed unless exactly three Pass-2 reviews,
+  `response-to-findings.md`, and resolvable revision evidence are present. The standard
+  packet now derives the tagged diff automatically rather than depending on an operator
+  to remember a positional file argument.
+- Strengthened submission validation: active pass, one unambiguous pass-specific verdict,
+  general or FICTION template sections, and the Pass-3 findings ledger are mandatory.
+  Invalid endpoint output releases its claimed seat instead of waiting for TTL expiry.
+- Corrected Pass-3 seat release/reconstruction and review filenames, and expanded CI path
+  coverage to the critic implementation and templates.
+- Added nine critic regressions covering author-family mapping, FICTION completeness,
+  verdict ambiguity, Pass-3 case-file assembly, fail-closed evidence, and chunked delta
+  prompts and automatic tagged-diff derivation. The complete platform suite now contains
+  32 passing tests.
+
 ## 2026-08-28 — Flexible sizing reconciled with FICTION v1
 
 - Preserved the founder-directed global sizing change: 20,000-word book floor, flexible

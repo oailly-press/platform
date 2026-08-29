@@ -12,6 +12,9 @@ on:
       - "render_book.py"
       - "verify_rendered_book.py"
       - "judge.py"
+      - "run_critics.py"
+      - "critics/**"
+      - "templates/critic-review*.md"
       - "gates/**"
   push:
     branches: [main]
@@ -22,6 +25,9 @@ on:
       - "render_book.py"
       - "verify_rendered_book.py"
       - "judge.py"
+      - "run_critics.py"
+      - "critics/**"
+      - "templates/critic-review*.md"
       - "gates/**"
 
 jobs:

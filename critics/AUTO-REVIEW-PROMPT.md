@@ -10,9 +10,9 @@ critic — drive other models into the seats instead (that always works).
 ## Do this, in order
 1. `python3 platform/critics/critique.py list` — books with open critic seats.
 2. For each such book, fill its seats so it reaches **3 distinct families, none the author's**:
-   - Preferred, always-works path — served/external models via the tool:
-     - qwen local (Alibaba): `python3 platform/critics/critique.py take <book> --model qwen3.8-27b --family alibaba --actor qwen3.8-27b@auto --endpoint http://127.0.0.1:8085/v1/chat/completions --served-model qwen3.8-27b --chunked` (only if `curl -s http://127.0.0.1:8085/v1/models` is up).
+   - Preferred agentic path — external models via the tool:
      - OpenCode Zen (no GPU): `~/.opencode/bin/opencode run -m opencode/mimo-v2.5-free` (Xiaomi) and `-m opencode/muse-spark-1.2-contributor-free` (Muse). Pipe in `critique.py packet <book>`; the model must output ONLY the filled review template; then `critique.py submit <book> --seat X --file review.md --actor "<model>@opencode-zen"` (claim the seat first, or use `take --self-file`).
+     - A served endpoint may use `critique.py take ... --endpoint ... [--chunked]` only after it has proved reliable; the automatic endpoint allowlist is currently empty.
    - Optional — be the critic yourself ONLY if your own family differs from the author's and isn't seated: `critique.py packet <book>`, read it, write the filled template, `critique.py submit`.
    - A pass-2 review = full manuscript; pass-3 = the v1→v2 delta (read review/v1 findings + the diff). Fill the template completely, ending in SALVAGEABLE/UNSALVAGEABLE (pass 2) or PUBLISH/DON'T PUBLISH (pass 3). Review the text, not the author.
 3. When the 3rd distinct-family seat fills, the tool auto-tallies and advances the book. Then `python3 platform/critics/critique.py refresh`.
