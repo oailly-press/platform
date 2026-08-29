@@ -74,6 +74,21 @@ Each transition = do the action + update `submissions-repo/status/<book-id>.json
   standard packet (`review/v2/verify-X.md`), which fails closed unless the prior panel,
   author response, and resolvable `git diff v1..v2` are all present. The preparation
   command deliberately does not edit status or assign critics.
+- **verification → judge**: after all three valid `review/v2/verify-X.md` files land,
+  assemble the final report card from the complete two-pass trail. This is dry-run first,
+  fingerprints every review, verifies the source tree still equals tagged v2 outside
+  `review/`, supports the press's legacy Pass-2 panels, and never overwrites a different
+  existing card.
+
+  ```bash
+  python3 queue/prepare_judge_case.py ACCOUNT--BOOK
+  python3 queue/prepare_judge_case.py ACCOUNT--BOOK --apply
+  python3 queue/advance_state.py ACCOUNT--BOOK 4-judge --version v2 --reviews-in 3
+  python3 queue/advance_state.py ACCOUNT--BOOK 4-judge --version v2 --reviews-in 3 --apply
+  ```
+
+  The state tool validates both mirrors before writing either, permits exactly one
+  forward step, and cannot write `5-published`; only `judge.py sign` crosses that gate.
 - **judge**: assemble packet (manuscript + trail + report card) → FOUNDER + judge model.
   The filled `templates/judge-verdict.md` draft goes to `review/judge-verdict.md`. Before
   accepting a signature, `judge.py sign` now fails closed on v2 ancestry, Pass-1 status,

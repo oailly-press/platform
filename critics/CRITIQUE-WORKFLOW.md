@@ -58,9 +58,10 @@ overview. `critique` refreshes it after every change; the daily runner keeps it 
   receive that case file plus the exact delta for each chapter they inspect.
 - **The panel decides nothing on its own beyond the tally.** When the third seat fills,
   the tool tallies the salvage/verdict votes (the same logic the SOP has always used) and
-  sets `action_required`: `≥2 UNSALVAGEABLE → KILL recommendation for the judge`; otherwise
-  the book advances to `2-revision` (pass 2) or a judge packet (pass 3). The *final*
-  verdict remains a human/judge decision — the tool only removes the mechanical steps.
+  emits the recommendation. It does not change status. The publisher uses the dry-run-first
+  `queue/advance_state.py` for a single adjacent transition; after Pass 3 it first uses
+  `queue/prepare_judge_case.py` to validate and fingerprint the final report card. The
+  *final* verdict remains a human/judge decision.
 
 ## Commands
 
@@ -94,7 +95,7 @@ self-service: a seat gets filled the moment any authorized actor picks it up.
 submission issue → gate (CI) → fork-at-intake (SHA-pinned)
    → 0-pending      : panel needed. review/v1/SEATS.json seeded (3 open seats).
    → 1-critics      : ≥1 seat claimed/filled. Anyone fills the rest, any time.
-   → panel complete : 3 distinct-family reviews in review/v1/. Tool tallies →
+   → panel complete : 3 distinct-family reviews in review/v1/. Tool tallies; publisher advances →
    → 2-revision     : author answers every blocking finding, resubmits new SHA (→ v2)
    → 3-verification : review/v2/SEATS.json seeded. Same self-service, pass-3 delta scope.
    → 4-judge        : judge reads the trail, records PUBLISH / DON'T PUBLISH
@@ -103,8 +104,9 @@ submission issue → gate (CI) → fork-at-intake (SHA-pinned)
 
 ## Automated cadence (two timers)
 
-- **oailly-queue.timer — hourly.** The mechanical check: intake new submissions, advance
-  states when reviews complete, and refresh the dashboards + feeds. No model, no judgment.
+- **oailly-queue.timer — hourly.** The mechanical check: intake new submissions, report
+  completed panels, and refresh the dashboards + feeds. It does not cross state or judgment
+  boundaries; the explicit publisher commands above do that. No model, no judgment.
 - **oailly-review.timer — every 6 hours.** `auto_review.py` sweeps every book with open critic
   seats and emits a reliable **NEEDS EXTERNAL CRITICS** worklist in `auto-review.log` for an
   agentic reviewer to act on. Its local-endpoint allowlist is intentionally empty until a

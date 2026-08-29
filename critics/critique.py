@@ -151,7 +151,7 @@ def reconstruct_from_files(fork: Path, vdir: str, pass_no: int) -> dict:
                 break
         fam = family_of(model) or re.sub(r'[^a-z0-9]+', '-', model.lower()).strip('-')[:24] or "unknown"
         found[seat] = {"state": "filled", "model": model, "family": fam,
-                       "actor": "legacy-file", "verdict": tally_verdict(text)}
+                       "actor": "legacy-file", "verdict": tally_verdict(text, pass_no)}
     return found
 
 
@@ -254,6 +254,13 @@ def do_claim(book, model, family, actor, seat_pref) -> tuple[Path, str, str]:
 
 REQUIRED_HEADER_TOKENS = ("CRITIC:", "PASS:")
 VERDICT_TOKENS = ("SALVAGEABLE", "PUBLISH", "DON'T PUBLISH", "DONT PUBLISH")
+COMMON_SECTIONS = ("## Verdict summary", "## Blocking findings", "## Suggestions")
+FICTION_SECTIONS = (
+    "## Continuity-and-consistency audit",
+    "## Craft-axis scores",
+    "## Density finding",
+)
+NONFICTION_SECTIONS = ("## Fact-check sample", "## Scores")
 
 
 # (phrase, normalized). Order only matters for readability — resolution is positional.
@@ -278,30 +285,55 @@ def _verdict_in(span: str) -> str | None:
     up = span.upper()
     hits = []
     for phrase, norm in _VERDICT_PHRASES:
-        start = 0
-        while (idx := up.find(phrase, start)) >= 0:
-            hits.append((idx + len(phrase), len(phrase), norm))
-            start = idx + 1
+        for match in re.finditer(
+            rf"(?<![A-Z]){re.escape(phrase)}(?![A-Z])", up
+        ):
+            hits.append((match.end(), len(phrase), norm))
     if not hits:
         return None
     return max(hits)[2]
 
 
-def tally_verdict(text: str) -> str:
+def tally_verdict(text: str, pass_no: int | None = None) -> str:
     # Prefer the '## Verdict summary' section (where the verdict is declared); fall back to the
     # whole review only if that section carries no verdict token. Never scan prose for a substring.
     m = re.search(r'##\s*verdict\s+summary\b(.*?)(?:\n##\s|\Z)', text, re.I | re.S)
-    return (m and _verdict_in(m.group(1))) or _verdict_in(text) or "UNCLEAR"
+    verdict = (m and _verdict_in(m.group(1))) or _verdict_in(text) or "UNCLEAR"
+    allowed = {
+        2: {"SALVAGEABLE", "UNSALVAGEABLE"},
+        3: {"PUBLISH", "DONT-PUBLISH"},
+    }
+    if pass_no in allowed and verdict not in allowed[pass_no]:
+        return "UNCLEAR"
+    return verdict
 
 
-def validate_review(text: str):
+def validate_review(text: str, pass_no: int, is_fiction: bool):
     if len(text.strip()) < 800:
         die("review body is too short (<800 chars) — did the model return empty content?")
     missing = [t for t in REQUIRED_HEADER_TOKENS if t not in text]
     if missing:
         die(f"review is missing template header tokens: {', '.join(missing)}")
-    if not any(t in text.upper() for t in VERDICT_TOKENS):
-        die("review has no verdict line (SALVAGEABLE/UNSALVAGEABLE or PUBLISH/DON'T PUBLISH)")
+    pass_match = re.search(r"(?im)^PASS:\s*([23])\b", text)
+    if not pass_match or int(pass_match.group(1)) != pass_no:
+        die(f"review PASS header must name the active pass ({pass_no})")
+    required_sections = COMMON_SECTIONS + (FICTION_SECTIONS if is_fiction else NONFICTION_SECTIONS)
+    if pass_no == 3:
+        required_sections += ("## Pass-3 only: findings ledger",)
+    lower = text.lower()
+    missing_sections = [heading for heading in required_sections if heading.lower() not in lower]
+    if missing_sections:
+        shelf = "FICTION" if is_fiction else "general"
+        die(f"{shelf} review is missing required sections: {', '.join(missing_sections)}")
+    summary = re.search(r"##\s*verdict\s+summary\b(.*?)(?:\n##\s|\Z)", text, re.I | re.S)
+    summary_text = summary.group(1) if summary else ""
+    unfilled = (
+        re.search(r"SALVAGEABLE\s*/\s*UNSALVAGEABLE", summary_text, re.I)
+        or re.search(r"PUBLISH\s*/\s*(?:DON'T|DONT|DO NOT)\s+PUBLISH", summary_text, re.I)
+    )
+    if unfilled or tally_verdict(text, pass_no) == "UNCLEAR":
+        expected = "SALVAGEABLE/UNSALVAGEABLE" if pass_no == 2 else "PUBLISH/DON'T PUBLISH"
+        die(f"review must select one Pass-{pass_no} verdict ({expected}) at the end of its summary")
 
 
 def do_submit(book, seat, text, actor=None) -> dict:
@@ -309,13 +341,15 @@ def do_submit(book, seat, text, actor=None) -> dict:
     seat = seat.upper()
     if seat not in SEATS:
         die(f"seat must be one of {SEATS}")
-    validate_review(text)
-    verdict = tally_verdict(text)
     st = status_of(book)
     pass_no, vdir = pass_and_dir(st["state"])
 
     for attempt in range(6):
         fork = fork_dir(book)
+        manifest = json.loads((fork / "manifest.json").read_text())
+        is_fiction = manifest.get("book", {}).get("shelf") == "fiction"
+        validate_review(text, pass_no, is_fiction)
+        verdict = tally_verdict(text, pass_no)
         seats = load_seats(fork, vdir, book, pass_no)
         info = seats["seats"].get(seat, {})
         if info.get("state") == "filled":
@@ -372,7 +406,7 @@ def produce_via_endpoint(fork, endpoint, served_model, pass_no, chunked) -> str:
     sys.path.insert(0, str(HERE))
     import run_critics as rc
     if chunked:
-        return rc.chunked_review(endpoint, served_model, fork)
+        return rc.chunked_review(endpoint, served_model, fork, pass_no=pass_no)
     packet = sh([sys.executable, str(HERE / "assemble_critic_packet.py"), str(fork), str(pass_no)]).stdout
     return rc.call_model(endpoint, served_model, packet)
 
@@ -475,7 +509,11 @@ def _report_submit(res, book):
         print(f"\n=== PANEL COMPLETE ({book} pass {res['pass']}) ===")
         print(f"  verdicts: {', '.join(v for v in t['verdicts'] if v)}")
         print(f"  → {t['recommendation']}")
-        print(f"  The daily runner will sync status + advance state; or advance now with run_queue.py.")
+        if res["pass"] == 2:
+            print("  Publisher next: dry-run queue/advance_state.py to 2-revision, then --apply.")
+        else:
+            print("  Publisher next: dry-run queue/prepare_judge_case.py, then --apply;")
+            print("  only after the report card is pushed, advance explicitly to 4-judge.")
     refresh_dashboard()
 
 
@@ -498,6 +536,7 @@ def cmd_take(a):
             pass_no, _ = pass_and_dir(st["state"])
             text = produce_via_endpoint(fork, a.endpoint, a.served_model, pass_no, a.chunked)
     except SystemExit:
+        do_release(a.book, seat)
         raise
     except Exception as e:
         do_release(a.book, seat)
@@ -510,10 +549,10 @@ def do_release(book, seat):
     check_bid(book)
     seat = seat.upper()
     st = status_of(book)
-    _, vdir = pass_and_dir(st["state"])
+    pass_no, vdir = pass_and_dir(st["state"])
     for _ in range(6):
         fork = fork_dir(book)
-        seats = load_seats(fork, vdir, book, 2)
+        seats = load_seats(fork, vdir, book, pass_no)
         if seats["seats"].get(seat, {}).get("state") != "claimed":
             return  # nothing to release
         seats["seats"][seat] = {"state": "open"}

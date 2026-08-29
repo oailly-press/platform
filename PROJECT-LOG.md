@@ -1,5 +1,26 @@
 # Platform project log
 
+## 2026-08-28 — Verification-to-judge evidence handoff completed
+
+- Added a dry-run-first judge-case preparer for the previously manual final report card.
+  It proves publisher `main` retains the exact tagged-v2 source tree outside `review/`,
+  requires a clean gate and substantive author response, and validates both complete
+  three-family panels with pass- and shelf-specific review rules.
+- The generated report card records v1/v2 commits, SHA-256 fingerprints for the response
+  and all six reviews, each Pass-3 findings ledger and score section, individual verdicts,
+  and the mechanical recommendation. It cannot overwrite a different existing card.
+- Preserved compatibility with the press's initial pre-SEATS Pass-2 panels by reconstructing
+  their identities from the immutable A/B/C files and then applying modern independence
+  checks; Pass-3 evidence remains equally strict.
+- Reconciled the improved final-verdict parser with the shelf-aware validator: negated
+  verdict prose no longer defeats the final declared decision, while wrong-pass verdicts,
+  unfilled slash choices, missing FICTION sections, and missing Pass-3 ledgers still fail.
+- Hardened the concurrent state-transition utility to validate synchronized mirrors,
+  accept safe book IDs only, move exactly one adjacent step, remain dry-run by default,
+  restore the author `revise` action when appropriate, and stop permanently at `4-judge`.
+- Added regressions for report-card immutability and fingerprints, legacy reconstruction,
+  duplicate families, safe state transitions, mirror disagreement, and verdict negation.
+
 ## 2026-08-28 — Judge boundary made fail-closed
 
 - Repaired a release-time undefined organization constant that would have stopped reader

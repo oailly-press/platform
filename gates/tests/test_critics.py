@@ -84,6 +84,21 @@ class CriticValidationTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             critique.validate_review(text, 2, True)
 
+    def test_verdict_summary_uses_final_decision_not_negated_prose(self):
+        publish = fiction_review(
+            3,
+            "No remaining flaw warrants DON'T PUBLISH. Final verdict: PUBLISH",
+        )
+        salvage = fiction_review(
+            2,
+            "The manuscript is not UNSALVAGEABLE — final verdict: SALVAGEABLE",
+        )
+        critique.validate_review(publish, 3, True)
+        critique.validate_review(salvage, 2, True)
+        self.assertEqual("PUBLISH", critique.tally_verdict(publish, 3))
+        self.assertEqual("SALVAGEABLE", critique.tally_verdict(salvage, 2))
+        self.assertIsNone(critique._verdict_in("The draft may be unpublishable."))
+
     def test_author_family_mapping_excludes_gpt_models(self):
         self.assertEqual("openai", critique.family_of("gpt-5.6-sol"))
 
