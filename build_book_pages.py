@@ -50,7 +50,7 @@ def read_panel(fork: Path):
                 t = p.read_text(encoding="utf-8", errors="replace")
                 model = next((l.split(":", 1)[1].strip() for l in t.splitlines()
                               if l.upper().startswith("CRITIC:")), "?")
-                seats.append({"seat": seat, "model": model[:80], "verdict": verdict_of(t)})
+                seats.append({"seat": seat, "model": model[:160], "verdict": verdict_of(t)})
         if seats:
             return label, seats
     return None, []

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from datetime import date as _date
 from pathlib import Path
 
 import markdown
@@ -28,19 +29,7 @@ except Exception:
     _aibn = None
 
 ACCENT_DEFAULT = "#4FD6C3"
-
-
-def locate_cover_dir(platform_dir: Path) -> Path:
-    """Find covers in sibling, nested-checkout, or standalone workspace layouts."""
-    candidates = (
-        platform_dir.parent / "site-repo" / "assets" / "covers",
-        platform_dir.parent / "assets" / "covers",
-        platform_dir.parent / "gh" / "site-repo" / "assets" / "covers",
-    )
-    return next((candidate for candidate in candidates if candidate.is_dir()), candidates[0])
-
-
-_covers = locate_cover_dir(Path(__file__).resolve().parent)
+_covers = Path(__file__).resolve().parents[1] / "gh/site-repo/assets/covers"
 SITE_ASSETS = _covers if _covers.is_dir() else None
 
 SHELL = """<!DOCTYPE html>
@@ -50,13 +39,19 @@ SHELL = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{page_title}</title>
 <meta name="description" content="{og_desc}">
+<link rel="canonical" href="{canonical}">
 <meta property="og:type" content="book">
+<meta property="og:site_name" content="o'ailly">
 <meta property="og:title" content="{og_title}">
 <meta property="og:description" content="{og_desc}">
 <meta property="og:url" content="{og_url}">
 <meta property="og:image" content="{og_image}">
+<meta property="og:image:alt" content="{og_image_alt}">
+<meta property="book:author" content="{book_author}">
+<meta property="book:isbn" content="{book_isbn}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{og_title}">
+<meta name="twitter:description" content="{og_desc}">
 <meta name="twitter:image" content="{og_image}">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Inter:wght@400;500;600&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -64,8 +59,8 @@ SHELL = """<!DOCTYPE html>
 --sans:'Archivo',system-ui,sans-serif;--body:'Inter',system-ui,sans-serif;
 --serif:'Source Serif 4',Georgia,serif;--mono:'JetBrains Mono',monospace;
 --rsize:18px;--rfont:var(--body);--bg:var(--ink);--fg:var(--paper);--panel:var(--ink2)}}
-html[data-theme="sepia"]{{--bg:#f4ecd8;--fg:#3a3226;--panel:#ede3cb;--muted:#7a6f5d;--line:#d8ccb2}}
-html[data-theme="light"]{{--bg:#fafafa;--fg:#1a1e24;--panel:#f0f0f0;--muted:#5c6570;--line:#dcdfe3}}
+html[data-theme="sepia"]{{--bg:#f4ecd8;--fg:#3a3226;--panel:#ede3cb;--muted:#6b6152;--line:#d8ccb2;--accent:#8A5A16}}
+html[data-theme="light"]{{--bg:#fafafa;--fg:#1a1e24;--panel:#f0f0f0;--muted:#5c6570;--line:#dcdfe3;--accent:#8A5A16}}
 html[data-font="serif"]{{--rfont:var(--serif)}}
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{background:var(--bg);color:var(--fg);font-family:var(--rfont);line-height:1.78;font-size:var(--rsize);transition:background .3s,color .3s}}
@@ -137,13 +132,13 @@ nav.pager .next{{text-align:right;margin-left:auto}}
 <div class="top"><div class="in">
   <a class="wordmark" href="/">o'<span class="ai">ai</span>lly</a>
   <div class="tools">
-    <button onclick="rsz(-1)" title="smaller text">A−</button>
-    <button onclick="rsz(1)" title="larger text">A+</button>
-    <button onclick="rfont()" title="serif / sans">Aa</button>
-    <button onclick="rtheme()" title="dark / sepia / light">◐</button>
-    <button onclick="rfull()" title="full screen">⛶</button>
-    <a class="tbtn" href="index.html" title="contents">☰</a>
-    <button onclick="rshare()" title="copy link to share">⎘</button>
+    <button onclick="rsz(-1)" title="smaller text" aria-label="decrease font size">A−</button>
+    <button onclick="rsz(1)" title="larger text" aria-label="increase font size">A+</button>
+    <button onclick="rfont()" title="serif / sans" aria-label="font size">Aa</button>
+    <button onclick="rtheme()" title="dark / sepia / light" aria-label="cycle theme">◐</button>
+    <button onclick="rfull()" title="full screen" aria-label="toggle fullscreen">⛶</button>
+    <a class="tbtn" href="index.html" title="contents" aria-label="contents">☰</a>
+    <button onclick="rshare()" title="copy link to share" aria-label="share">⎘</button>
   </div>
 </div></div>
 <main>
@@ -227,8 +222,7 @@ def md(text: str) -> str:
 
 
 def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: str = '',
-           review: str = '', publication_status: str = '', version: str = '',
-           revision_sha: str = '') -> None:
+           review: str = '', publication_status: str = '') -> None:
     manifest = json.loads((book_dir / "manifest.json").read_text(encoding="utf-8"))
     book, prov = manifest["book"], manifest["provenance"]
     chapters = manifest["structure"]["chapters"]
@@ -239,17 +233,22 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     def _attr(s):
         return str(s).replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
-    def shell(page_title, content):
+    def shell(page_title, content, canonical=None):
         bid = out_dir.name
         og_img = f"https://oailly.com/assets/og/{bid}.png"
         og_url = f"https://oailly.com/read/{bid}/"
         og_desc = _attr((book.get("subtitle") or book["title"])
                         + " — written by machines, verified by humans, signed all the way down.")
+        og_image_alt = _attr(f'{book["title"]} — cover, o\'ailly press')
+        book_author = _attr(", ".join(w["model"] for w in prov["written_by"]))
+        book_isbn = _attr(aibn_rec["aibn"]) if aibn_rec else ""
         return SHELL.format(lang=book.get("language", "en"), page_title=page_title,
                             accent=accent, home="/", slug=slug,
                             book_title_upper=book["title"].upper(), content=content,
                             pyg=pyg, og_title=_attr(book["title"]), og_desc=og_desc,
-                            og_url=og_url, og_image=og_img)
+                            og_url=og_url, og_image=og_img,
+                            canonical=(canonical or og_url), og_image_alt=og_image_alt,
+                            book_author=book_author, book_isbn=book_isbn)
 
     # --- book identity: AIBN + cover art (cover-to-cover reader) ---
     book_id = out_dir.name                    # read/<book_id>/
@@ -262,78 +261,20 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
             aibn_rec = None
     front_cover = f"/assets/covers/{book_id}-front.png"
     back_cover = f"/assets/covers/{book_id}-back.png"
-    has_covers = bool(
-        SITE_ASSETS
-        and (SITE_ASSETS / f"{book_id}-front.png").is_file()
-        and (SITE_ASSETS / f"{book_id}-back.png").is_file()
-    )
-
-    canonical_sections = []
-    for source_name, output_name, label in (
-        ("provenance.md", "provenance.html", "Provenance"),
-        ("frontmatter.md", "frontmatter.html", "Front Matter"),
-    ):
-        source_path = book_dir / source_name
-        if source_path.exists():
-            canonical_sections.append({
-                "source": source_path,
-                "output": output_name,
-                "title": label,
-                "key": output_name.removesuffix(".html"),
-            })
-    for chapter in chapters:
-        canonical_sections.append({
-            "source": book_dir / chapter["source_file"],
-            "output": f'ch{chapter["number"]:02d}.html',
-            "title": chapter["title"],
-            "key": f'ch{chapter["number"]:02d}',
-            "chapter": chapter,
-        })
-    backmatter_path = book_dir / "backmatter.md"
-    if backmatter_path.exists():
-        canonical_sections.append({
-            "source": backmatter_path,
-            "output": "backmatter.html",
-            "title": "Back Matter",
-            "key": "backmatter",
-        })
-    first_page = canonical_sections[0]["output"] if canonical_sections else "index.html"
+    has_covers = (SITE_ASSETS / f"{book_id}-front.png").is_file() if SITE_ASSETS else False
 
     # --- title page: front cover + cover meta + provenance + TOC
     written = ", ".join(f"{m['model']}" for m in prov["written_by"])
     verifier = prov["verified_by"].get("name") or "—"
-    release_status = publication_status or manifest["review"].get("status", "draft")
-    release_attestation = ""
-    release_attestation_body = ""
-    if release_status.lower() == "published":
-        identity = (
-            f" Version {version}, exact source commit {revision_sha}."
-            if version and revision_sha else ""
-        )
-        release_attestation_body = (
-            "The provenance text above is the immutable author snapshot and records the "
-            "pipeline state at handoff. Publication subsequently completed independent "
-            f"verification and a named-human signed verdict.{identity} The signed decision "
-            f"and complete review evidence are available at {review or 'the public review trail'}."
-        )
-        release_attestation = f"## Release Attestation\n\n{release_attestation_body}"
-    toc_prefix = "\n".join(
-        f'<li><a href="{section["output"]}"><span class="n">§</span>'
-        f'{section["title"]}</a></li>'
-        for section in canonical_sections
-        if section["key"] in {"provenance", "frontmatter"}
-    )
-    toc_chapters = "\n".join(
+    toc = "\n".join(
         f'<li><a href="ch{c["number"]:02d}.html"><span class="n">{c["number"]:02d}</span>'
         f'{c["title"]}</a></li>' for c in chapters)
-    toc_suffix = ('<li><a href="backmatter.html"><span class="n">§</span>'
-                  'Back Matter</a></li>' if backmatter_path.exists() else '')
-    toc = "\n".join(part for part in (toc_prefix, toc_chapters, toc_suffix) if part)
-    cover_open = (f'<a class="coverpage" href="{first_page}" title="open the book">'
+    cover_open = (f'<a class="coverpage" href="ch01.html" title="open the book">'
                   f'<img src="{front_cover}" alt="{book["title"]} — front cover" '
                   f'loading="eager"><span class="opencue">open the book →</span></a>'
                   if has_covers else '')
     review_url = review or manifest["review"].get("trail_uri") or ''
+    release_status = publication_status or manifest["review"].get("status", "draft")
     review_display = (f'<a href="{review_url}">{review_url}</a>'
                       if review_url else "pending publication")
     idx = (cover_open
@@ -345,10 +286,8 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
            f'<div class="prov"><b>WRITTEN BY</b> {written}<br>'
            f'<b>VERIFIED BY</b> {verifier}<br>'
            f'<b>DISCLOSURE</b> {prov["disclosure_statement"]}<br>'
-           + f'<b>PUBLICATION</b> {release_status.upper()}<br>'
+           f'<b>PUBLICATION</b> {release_status.upper()}<br>'
            f'<b>REVIEW TRAIL</b> {review_display}</div>'
-           + (f'<div class="prov release"><b>RELEASE ATTESTATION</b>'
-              f'{md(release_attestation_body)}</div>' if release_attestation_body else '')
            + (f'<div class="dl"><a href="{epub}" download>⬇ EPUB — Kindle &amp; e-readers</a>'
               f'<a href="javascript:window.print()">⎙ Print / save as PDF</a>'
               + (f'<a href="{source}">&lt;/&gt; Raw Markdown — for machines</a>' if source else '')
@@ -357,18 +296,23 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     # one-GET full text for machine readers
     full = [f"# {book['title']} — {book.get('subtitle','')}\n",
             f"(canonical markdown, concatenated; manifest: see book repo. Provenance: written by {written}; verified by {verifier}; draft status per chapter notes.)\n"]
-    for name in ("provenance.md", "frontmatter.md"):
+    for c in chapters:
+        full.append((book_dir / c["source_file"]).read_text(encoding="utf-8") + "\n")
+    for name in ("frontmatter.md", "provenance.md", "backmatter.md"):
         fp = book_dir / name
         if fp.exists():
             full.append(f"\n---\n\n{fp.read_text(encoding='utf-8')}")
-            if name == "provenance.md" and release_attestation:
-                full.append(f"\n\n{release_attestation}\n")
-    for c in chapters:
-        full.append(f"\n---\n\n{(book_dir / c['source_file']).read_text(encoding='utf-8')}\n")
-    if backmatter_path.exists():
-        full.append(f"\n---\n\n{backmatter_path.read_text(encoding='utf-8')}")
     (out_dir / "book.md").write_text("\n".join(full), encoding="utf-8")
 
+    og_img = f"https://oailly.com/assets/og/{book_id}.png"
+    book_url = f"https://oailly.com/read/{book_id}/"
+    date_published = ((aibn_rec.get("assigned") if aibn_rec else None)
+                      or (prov.get("verified_by", {}).get("role", ""))
+                      or "")
+    m = re.search(r"\d{4}-\d{2}-\d{2}", date_published)
+    date_published = m.group(0) if m else _date.today().isoformat()
+    word_count = manifest["structure"].get("word_count_body")
+    keywords = [c["title"] for c in chapters]
     jsonld = {"@context": "https://schema.org", "@type": "Book",
               "name": book["title"], "alternativeName": book.get("subtitle", ""),
               "author": [{"@type": "SoftwareApplication", "name": w["model"]} for w in prov["written_by"]],
@@ -376,7 +320,27 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
               "inLanguage": book.get("language", "en"),
               "bookFormat": "https://schema.org/EBook",
               "creativeWorkStatus": release_status,
+              "url": book_url,
+              "image": og_img,
+              "datePublished": date_published,
+              "isAccessibleForFree": True,
+              "keywords": ", ".join(keywords),
+              "about": [{"@type": "Thing", "name": k} for k in keywords],
+              "workExample": [
+                  {"@type": "Book", "bookFormat": "https://schema.org/EBook",
+                   "encodingFormat": "application/epub+zip", "name": f'{book["title"]} (EPUB)',
+                   "url": book_url + "book.epub"},
+                  {"@type": "Book", "bookFormat": "https://schema.org/EBook",
+                   "encodingFormat": "text/markdown", "name": f'{book["title"]} (Markdown)',
+                   "url": book_url + "book.md"}],
               "description": f"{book.get('subtitle','')} — written by machines, verified by humans; full review trail publishes with the book."}
+    if word_count:
+        jsonld["wordCount"] = word_count
+    if aibn_rec:
+        jsonld["identifier"] = [
+            {"@type": "PropertyValue", "propertyID": "AIBN", "value": aibn_rec["aibn_human"]},
+            {"@type": "PropertyValue", "propertyID": "isbn", "value": aibn_rec["aibn"]}]
+        jsonld["isbn"] = aibn_rec["aibn"]
     idx = ('<script type="application/ld+json">' + json.dumps(jsonld) + '</script>') + idx
     aibn_cite = (f'{aibn_rec["aibn_human"]} · ' if aibn_rec else '')
     repo = f'https://github.com/oailly-press/{book_id.split("--", 1)[1]}'
@@ -389,20 +353,19 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     idx = idx + cite
     (out_dir / "index.html").write_text(shell(book["title"], idx), encoding="utf-8")
 
-    # --- canonical pages: provenance → front matter → chapters → back matter ---
-    for i, section in enumerate(canonical_sections):
-        body = md(section["source"].read_text(encoding="utf-8"))
-        if section["key"] == "provenance" and release_attestation:
-            body += md(release_attestation)
-        last = i + 1 >= len(canonical_sections)
+    # --- chapter pages: paginated reader (flip page by page, like a real book) ---
+    for i, c in enumerate(chapters):
+        text = (book_dir / c["source_file"]).read_text(encoding="utf-8")
+        body = md(text)
+        last = i + 1 >= len(chapters)
         end_href = 'back-cover.html' if has_covers else 'index.html'
-        prev_href = canonical_sections[i - 1]["output"] if i > 0 else 'index.html#end'
-        next_href = end_href if last else canonical_sections[i + 1]["output"]
-        next_title = (('Back cover' if has_covers else 'Contents') if last
-                      else canonical_sections[i + 1]["title"])
+        prev_href = f'ch{chapters[i-1]["number"]:02d}.html' if i > 0 else 'index.html#end'
+        next_href = end_href if last else f'ch{chapters[i+1]["number"]:02d}.html'
+        prev_title = chapters[i - 1]["title"] if i > 0 else 'Cover'
+        next_title = ('Back cover' if has_covers else 'Contents') if last else chapters[i + 1]["title"]
         reader = (
             f'<div class="preader"><i id="pbar"></i></div>'
-            f'<div class="reader" data-ch="{section["key"]}" data-prev="{prev_href}" data-next="{next_href}">'
+            f'<div class="reader" data-ch="{c["number"]}" data-prev="{prev_href}" data-next="{next_href}">'
             f'<div class="pnav l"><span>‹</span></div>'
             f'<div class="pages">{body}</div>'
             f'<div class="pnav r"><span>›</span></div>'
@@ -416,27 +379,28 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
             f'<div class="grp"><a href="{next_href}">'
             f'{("to the back cover" if has_covers else "back to contents") if last else "next: " + next_title} →</a></div>'
             f'</div>')
-        (out_dir / section["output"]).write_text(
-            shell(f'{section["title"]} — {book["title"]}', reader), encoding="utf-8")
+        (out_dir / f'ch{c["number"]:02d}.html').write_text(
+            shell(f'{c["title"]} — {book["title"]}', reader,
+                  canonical=f'https://oailly.com/read/{book_id}/ch{c["number"]:02d}.html'),
+            encoding="utf-8")
 
     # --- back cover: the closing page of the cover-to-cover reader ---
     if has_covers:
-        last_page = canonical_sections[-1]["output"] if canonical_sections else "index.html"
+        last_ch = f'ch{chapters[-1]["number"]:02d}.html'
         aibn_line = (f'<div class="bc-aibn"><a href="/aibn/">{aibn_rec["aibn_human"]}</a>'
                      f' · scan on the back cover</div>' if aibn_rec else '')
         back = (f'<div class="backcover">'
                 f'<img src="{back_cover}" alt="{book["title"]} — back cover" loading="eager">'
                 f'{aibn_line}'
                 f'<div class="pagebar"><div class="grp">'
-                f'<a href="{last_page}#end">‹ last page</a></div>'
+                f'<a href="{last_ch}#end">‹ last page</a></div>'
                 f'<div class="grp"><a href="index.html">back to the cover ↺</a></div></div>'
                 f'</div>')
         (out_dir / "back-cover.html").write_text(
-            shell(f'Back cover — {book["title"]}', back), encoding="utf-8")
-    extra_pages = len(canonical_sections) - len(chapters)
-    cover_count = 1 if has_covers else 0
-    print(f"rendered {len(chapters)} chapter(s) + {extra_pages} canonical section(s) "
-          f"+ {cover_count} back cover(s) + index → {out_dir}")
+            shell(f'Back cover — {book["title"]}', back,
+                  canonical=f'https://oailly.com/read/{book_id}/back-cover.html'),
+            encoding="utf-8")
+    print(f"rendered {len(chapters)} chapter(s) + covers + index → {out_dir}")
 
 
 if __name__ == "__main__":
@@ -444,5 +408,4 @@ if __name__ == "__main__":
     def opt(name, default=''):
         return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
     render(Path(args[0]), Path(args[1]), opt("--accent", ACCENT_DEFAULT),
-           opt("--epub"), opt("--source"), opt("--review"), opt("--status"),
-           opt("--version"), opt("--revision-sha"))
+           opt("--epub"), opt("--source"), opt("--review"), opt("--status"))

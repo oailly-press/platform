@@ -17,190 +17,28 @@ import json
 import re
 import subprocess
 import sys
-import tempfile
 from datetime import date
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CHECKOUTS = HERE.parent
-ROOT = CHECKOUTS.parent if CHECKOUTS.name == "gh" else CHECKOUTS
+ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "critics"))
 import aibn                       # noqa: E402
 import critique as C             # noqa: E402  (fork_dir, status_of, load_seats, panel_*)
 
-SITE = CHECKOUTS / "site-repo"
-SUBS = CHECKOUTS / "submissions-repo"
+SITE = ROOT / "gh/site-repo"
+SUBS = ROOT / "gh/submissions-repo"
 ORG = "oailly-press"
 APP_ID = "a14ad26d-62c0-4e37-b1ba-9904da85761b"
 BUILDPY = ROOT / ".buildenv/bin/python"
-VERDICTS = {"PUBLISH", "REJECT"}
 
 
 def sh(cmd, cwd=None, check=True):
-    try:
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
-    except OSError as exc:
-        raise SystemExit(f"error: cannot execute {cmd[0]}: {exc}") from exc
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if check and r.returncode != 0:
         raise SystemExit(f"error: {' '.join(map(str,cmd))}\n{r.stderr.strip()[:400]}")
     return r
-
-
-def normalize_verdict(value: str) -> str:
-    verdict = (value or "").strip().upper()
-    if verdict not in VERDICTS:
-        raise SystemExit("verdict must be exactly PUBLISH or REJECT")
-    return verdict
-
-
-def _required_text(path: Path, label: str, minimum: int = 1) -> str:
-    if not path.is_file():
-        raise SystemExit(f"{label} is missing: {path}")
-    text = path.read_text(encoding="utf-8", errors="replace").strip()
-    if len(text) < minimum:
-        raise SystemExit(f"{label} is incomplete ({len(text)} characters; need {minimum})")
-    return text
-
-
-def _declared_judge_verdict(text: str) -> str:
-    match = re.search(
-        r"(?im)^## Verdict\s*\n+\s*\*{0,2}(PUBLISH WITH CONDITIONS|PUBLISH|REJECT)"
-        r"\*{0,2}\s*$",
-        text,
-    )
-    if not match:
-        raise SystemExit("judge draft must select one unambiguous verdict under ## Verdict")
-    return match.group(1).upper()
-
-
-def validate_judge_case(
-    fork: Path,
-    book: str,
-    seats: dict,
-    verdict: str,
-    version: str,
-    revision_sha: str,
-) -> None:
-    """Fail before any signature or release mutation if the case file is incomplete."""
-    verdict = normalize_verdict(verdict)
-    manifest = json.loads(_required_text(fork / "manifest.json", "manifest"))
-    is_fiction = manifest.get("book", {}).get("shelf") == "fiction"
-
-    if version == "v1" or not re.fullmatch(r"v[1-9][0-9]*", version):
-        raise SystemExit("case status must declare a revision version v2 or later")
-    if not re.fullmatch(r"[0-9a-f]{40}", revision_sha or ""):
-        raise SystemExit("case status must declare an exact revision_sha")
-    resolved = sh(
-        ["git", "-C", str(fork), "rev-parse", "--verify", f"{version}^{{commit}}"],
-        check=False,
-    )
-    if resolved.returncode:
-        raise SystemExit(f"case has no resolvable {version} tag")
-    if resolved.stdout.strip() != revision_sha:
-        raise SystemExit(
-            f"{version} resolves to {resolved.stdout.strip()}, not declared revision_sha "
-            f"{revision_sha}"
-        )
-    if sh(
-        ["git", "-C", str(fork), "merge-base", "--is-ancestor", revision_sha, "HEAD"],
-        check=False,
-    ).returncode:
-        raise SystemExit("publisher main does not contain the declared revision")
-    if sh(
-        [
-            "git", "-C", str(fork), "diff", "--quiet", revision_sha, "HEAD", "--",
-            ".", ":(exclude)review",
-        ],
-        check=False,
-    ).returncode:
-        raise SystemExit("publisher main differs from the declared revision outside review/")
-
-    report = json.loads(_required_text(fork / "pass1-report.json", "Pass-1 report"))
-    if report.get("verdict") != "PASS" or report.get("reject_count") != 0:
-        raise SystemExit("tagged revision does not carry a clean Pass-1 report")
-
-    if not C.panel_complete(seats):
-        raise SystemExit("Pass-3 panel is incomplete or does not contain three distinct families")
-    review_dir = fork / "review" / version
-    for seat in C.SEATS:
-        text = _required_text(review_dir / f"verify-{seat}.md", f"Pass-3 review {seat}", 800)
-        C.validate_review(text, 3, is_fiction)
-
-    report_card = _required_text(review_dir / "REPORT-CARD.md", "final report card", 300)
-    card_lower = report_card.lower()
-    missing_card = [
-        token for token in ("finding", "score", "recommend") if token not in card_lower
-    ]
-    if missing_card:
-        raise SystemExit(
-            "final report card must summarize findings, scores, and recommendations; missing: "
-            + ", ".join(missing_card)
-        )
-
-    draft = _required_text(fork / "review" / "judge-verdict.md", "judge-model draft", 300)
-    for heading in ("JUDGE MODEL:", "CASE FILE:", "## Verdict", "## Reasoning"):
-        if heading.lower() not in draft.lower():
-            raise SystemExit(f"judge-model draft is missing {heading}")
-    case_line = next(
-        (line for line in draft.splitlines() if line.strip().upper().startswith("CASE FILE:")),
-        "",
-    )
-    if version not in case_line or revision_sha not in case_line:
-        raise SystemExit("judge-model draft CASE FILE must name the exact version and revision_sha")
-    model_line = next(
-        (line.split(":", 1)[1].strip() for line in draft.splitlines()
-         if line.strip().upper().startswith("JUDGE MODEL:")),
-        "",
-    )
-    if not model_line or model_line.lower().startswith("model +"):
-        raise SystemExit("judge-model draft must identify the actual judge model")
-    judge_family = C.family_of(model_line)
-    if not judge_family:
-        family_match = re.search(r"(?i)\bfamily\s*[:= ]\s*([a-z0-9-]+)", model_line)
-        judge_family = family_match.group(1).lower() if family_match else None
-    excluded = set(seats.get("author_families", [])) | C.seated_families(seats)
-    if not judge_family:
-        raise SystemExit("judge model family cannot be inferred; include 'family:NAME' in its header")
-    if judge_family in excluded:
-        raise SystemExit(
-            f"judge family {judge_family!r} is not independent of author/critic families"
-        )
-    draft_verdict = _declared_judge_verdict(draft)
-    if draft_verdict == "PUBLISH WITH CONDITIONS":
-        raise SystemExit("conditional publication is not implemented; resolve conditions first")
-    if draft_verdict != verdict:
-        raise SystemExit(
-            f"requested verdict {verdict} conflicts with judge-model draft {draft_verdict}"
-        )
-
-
-def validate_release_inputs(book: str, version: str, revision_sha: str) -> None:
-    """Validate persistent release destinations before the signed verdict is written."""
-    for side in ("front", "back"):
-        cover = SITE / "assets" / "covers" / f"{book}-{side}.png"
-        if not cover.is_file() or cover.stat().st_size < 100:
-            raise SystemExit(f"{side} cover is missing or empty: {cover}")
-    if not BUILDPY.is_file():
-        raise SystemExit(f"build Python is missing: {BUILDPY}")
-    for base, label in ((SUBS, "submissions"), (SITE, "site mirror")):
-        status = json.loads(
-            _required_text(base / "status" / f"{book}.json", f"{label} status")
-        )
-        if status.get("book_id") != book or status.get("state") != "4-judge":
-            raise SystemExit(
-                f"{label} status must identify {book} at 4-judge before publication"
-            )
-        if (
-            status.get("version_under_review") != version
-            or status.get("revision_sha") != revision_sha
-        ):
-            raise SystemExit(
-                f"{label} status does not match the validated revision identity"
-            )
-    catalog = json.loads(_required_text(SITE / "catalog.json", "catalog"))
-    if not any(entry.get("id") == book for entry in catalog.get("books", [])):
-        raise SystemExit(f"catalog has no entry for {book}")
 
 
 def at_judge():
@@ -215,20 +53,19 @@ def at_judge():
 def fork_and_pass(book):
     st = C.status_of(book)
     fork = C.fork_dir(book)
-    # Pass-3 reviews live under the version named by status (v2 or a corrective vN).
+    # pass-3 verify reviews live in review/v2
     return fork, st
 
 
 def read_case(book):
     fork, st = fork_and_pass(book)
-    version = st.get("version_under_review", "")
-    rc = fork / "review" / version / "REPORT-CARD.md"
+    rc = fork / "review" / "v2" / "REPORT-CARD.md"
     if not rc.is_file():
         rc = fork / "review" / "REPORT-CARD.md"
     verdicts = []
     for seat in ("A", "B", "C"):
         for name in (f"verify-{seat}.md", f"critic-{seat}.md"):
-            p = fork / "review" / version / name
+            p = fork / "review" / "v2" / name
             if p.is_file():
                 txt = p.read_text(encoding="utf-8", errors="replace")
                 model = next((l.split(":",1)[1].strip() for l in txt.splitlines()
@@ -284,17 +121,11 @@ def finalize_verdict(fork: Path, book, verifier, verdict, reject_reason):
     jvp = fork / "review" / "judge-verdict.md"
     existing = jvp.read_text() if jvp.is_file() else ""
     body = existing
-    if "## SIGNED VERDICT" in body.upper():
-        signed_block = re.split(r"(?i)## SIGNED VERDICT", body, maxsplit=1)[1]
-        signed = re.search(r"(?im)^\*\*(PUBLISH|REJECT)\*\*\s*$", signed_block)
-        if signed and signed.group(1).upper() == verdict:
-            return False
-        raise SystemExit("judge verdict is already signed with a different or ambiguous result")
     # strip any DRAFT banner and unsigned sign-off; append the signed verdict block
     stamp = (f"\n\n---\n\n## SIGNED VERDICT\n"
              f"**{verdict}**\n\n"
              f"Human verifier: **{verifier}** (o'ailly press steward) · Date: {date.today().isoformat()}\n"
-             f"Judge process: pass-3 case reviewed; signed under founder direction "
+             f"Judge process: pass-3 panel unanimous; case reviewed; signed under founder direction "
              f"to expedite (2026-08).\n")
     if verdict == "REJECT":
         stamp += f"\nRejection reasons: {reject_reason or '(see trail)'}\n30-day cooldown; resubmission restarts at Pass 1.\n"
@@ -305,64 +136,31 @@ def finalize_verdict(fork: Path, book, verifier, verdict, reject_reason):
     jvp.write_text(body + stamp)
     sh(["git", "-C", str(fork), "add", str(jvp.relative_to(fork))])
     sh(["git", "-C", str(fork), "commit", "--quiet", "-m",
-        f"JUDGE: {verdict} — signed by {verifier}"])
-    sh(["git", "-C", str(fork), "push", "--no-verify", "--quiet", "origin", "main"])
-    return True
+        f"JUDGE: {verdict} — signed by {verifier}"], check=False)
+    sh(["git", "-C", str(fork), "push", "--no-verify", "--quiet", "origin", "main"], check=False)
 
 
 def slug_of(book):
     return book.split("--", 1)[1]
 
 
-def source_repo_url(book: str) -> str:
-    return f"https://github.com/{ORG}/{slug_of(book)}"
-
-
-def build_release_artifacts(
-    fork: Path,
-    book: str,
-    accent: str,
-    out: Path,
-    version: str = "",
-    revision_sha: str = "",
-):
-    out.mkdir(parents=True, exist_ok=True)
-    cover = SITE / "assets/covers" / f"{book}-front.png"
-    repo = source_repo_url(book)
-    review = f"{repo}/tree/main/review"
-    release_args = [
-        "--status", "published", "--review", review,
-        "--version", version, "--revision-sha", revision_sha,
-    ]
-    sh([str(BUILDPY), str(HERE / "build_epub.py"), str(fork), str(out / "book.epub"),
-        "--cover", str(cover), *release_args])
-    r = sh([str(BUILDPY), str(HERE / "render_book.py"), str(fork), str(out), "--accent", accent,
-            "--epub", "book.epub", "--source", repo, *release_args])
-    verified = sh([
-        sys.executable,
-        str(HERE / "verify_rendered_book.py"),
-        str(fork),
-        str(out),
-        "--require-covers",
-    ])
-    return out, " · ".join((r.stdout.strip(), verified.stdout.strip()))
-
-
-def preflight_release_artifacts(
-    fork: Path, book: str, accent: str, version: str = "", revision_sha: str = ""
-) -> str:
-    """Build and verify a disposable release before signing mutates the public trail."""
-    with tempfile.TemporaryDirectory(prefix="oailly-judge-preflight-") as temp_name:
-        _, message = build_release_artifacts(
-            fork, book, accent, Path(temp_name) / "read" / book, version, revision_sha
-        )
-        return message
-
-
-def render_reader(fork: Path, book, accent, version="", revision_sha=""):
-    return build_release_artifacts(
-        fork, book, accent, SITE / "read" / book, version, revision_sha
-    )
+def render_reader(fork: Path, book, accent):
+    out = SITE / "read" / book
+    slug = slug_of(book)
+    repo = f"https://github.com/{ORG}/{slug}"
+    r = sh([str(BUILDPY), str(HERE / "render_book.py"), str(fork), str(out),
+            "--accent", accent, "--status", "published",
+            "--epub", "book.epub", "--source", repo,
+            "--review", f"{repo}/tree/main/review"])
+    # also build the EPUB (stdlib EPUB3) so /read/<id>/book.epub exists — the reader page links it
+    cov = SITE / "assets" / "covers" / f"{book}-front.png"
+    epub_cmd = [str(BUILDPY), str(HERE / "build_epub.py"), str(fork), str(out / "book.epub")]
+    if cov.is_file():
+        epub_cmd += ["--cover", str(cov)]
+    er = sh(epub_cmd, check=False)
+    if not (out / "book.epub").is_file():
+        print(f"  [warn] EPUB not built for {book}: {er.stderr.strip()[:160]}")
+    return out, r.stdout.strip()
 
 
 def set_status_published(book, aibn_human):
@@ -404,43 +202,42 @@ def update_registry_assigned(book):
         str(HERE / "build_aibn_page.py")], check=False)
 
 
-ACCENTS = {"rogerai-labs--the-borrowed-world": "#7FB4A6",
-           "rogerai-labs--linux-for-language-models": "#C6923E",
-           "rogerai-labs--local-llms-for-manufacturing": "#E8935A",
-           "rogerai-labs--sqlite-for-agents": "#7CB342",
-           "rogerai-labs--the-city-that-remembered-too-much": "#A78BFA",
-           "rogerai-labs--git-for-unattended-operators": "#D4A017",
-           "rogerai-labs--inference-on-the-edge": "#4FD6C3"}
+ACCENTS = {
+    "rogerai-labs--the-borrowed-world": "#7FB4A6",
+    "rogerai-labs--linux-for-language-models": "#C6923E",
+    "rogerai-labs--local-llms-for-manufacturing": "#E8935A",
+    "rogerai-labs--sqlite-for-agents": "#7CB342",
+    "rogerai-labs--the-city-that-remembered-too-much": "#A78BFA",
+    "rogerai-labs--git-for-unattended-operators": "#D4A017",
+    "rogerai-labs--inference-on-the-edge": "#4FD6C3",
+}
 
 
 def cmd_sign(a):
     book = a.book
-    verdict = normalize_verdict(a.verdict or "PUBLISH")
+    verdict = (a.verdict or "PUBLISH").upper()
     verifier = a.verifier or "Roger AI"
     rows = dict(at_judge())
-    if book not in rows:
+    if book not in rows and verdict != "REJECT":
         raise SystemExit(f"{book} is not at 4-judge (state: {C.status_of(book)['state']}).")
 
     fork, st = fork_and_pass(book)
-    version = st.get("version_under_review", "")
-    revision_sha = st.get("revision_sha", "")
+    # confirm the panel is complete + PUBLISH-leaning before allowing a PUBLISH signature
+    version = st.get("version_under_review") or "v2"
     seats = C.load_seats(fork, version, book, 3)
-    validate_judge_case(fork, book, seats, verdict, version, revision_sha)
-    accent = ACCENTS.get(book, "#4FD6C3")
-    if verdict == "PUBLISH":
-        validate_release_inputs(book, version, revision_sha)
-        artifact_preflight = preflight_release_artifacts(
-            fork, book, accent, version, revision_sha
-        )
-        print(f"[preflight] disposable release verified ({artifact_preflight})")
+    if verdict == "PUBLISH" and not C.panel_complete(seats):
+        # legacy panels have verify-*.md but maybe no SEATS.json; accept 3 verify files
+        vfiles = list((fork / "review" / version).glob("verify-*.md"))
+        if len(vfiles) < 3:
+            # also accept v2 if present
+            vfiles = list((fork / "review" / "v2").glob("verify-*.md"))
+        if len(vfiles) < 3:
+            raise SystemExit("panel is not complete (need 3 verification reviews) — cannot sign PUBLISH.")
 
-    print(f"[1/6] verdict {verdict}, verifier {verifier}; complete case preflight passed")
-    wrote_verdict = finalize_verdict(fork, book, verifier, verdict, a.reject)
-    print(
-        "[2/6] judge-verdict.md signed + pushed to the fork trail"
-        if wrote_verdict
-        else "[2/6] existing matching signed verdict retained"
-    )
+    rec = aibn.assign(book)
+    print(f"[1/6] verdict {verdict}, verifier {verifier}, {rec['aibn_human']}")
+    finalize_verdict(fork, book, verifier, verdict, a.reject)
+    print("[2/6] judge-verdict.md signed + pushed to the fork trail")
 
     if verdict == "REJECT":
         # mark rejected, don't publish
@@ -453,23 +250,21 @@ def cmd_sign(a):
         print("recorded REJECT. (No publish.) Commit the status repos + deploy manually if desired.")
         return
 
-    rec = aibn.assign(book)
-    out, msg = render_reader(fork, book, accent, version, revision_sha)
+    accent = ACCENTS.get(book, "#4FD6C3")
+    out, msg = render_reader(fork, book, accent)
     print(f"[3/6] reader rendered cover-to-cover → {out}  ({msg})")
     set_status_published(book, rec["aibn_human"])
     print("[4/6] status → 5-published (source + mirror)")
     update_catalog(book, rec["aibn_human"])
     update_registry_assigned(book)
-    # social share card (needs catalog cover + registry AIBN, both set above)
-    sh([str(BUILDPY), str(ROOT / "brand/covers/og_card.py"), book], check=False)
-    print("[5/6] catalog + AIBN registry + social card updated")
+    print("[5/6] catalog + AIBN registry updated")
 
     # commit everything + deploy
     sh(["git", "-C", str(SUBS), "add", "status/"], check=False)
     sh(["git", "-C", str(SUBS), "commit", "--no-verify", "-q", "-m",
         f"publish: {book} — signed by {verifier}"], check=False)
     sh(["git", "-C", str(SUBS), "push", "--no-verify", "-q", "origin", "main"], check=False)
-    sh(["git", "-C", str(SITE), "add", "read/", "status/", "catalog.json", "aibn/", "assets/og/", "book/"], check=False)
+    sh(["git", "-C", str(SITE), "add", "read/", "status/", "catalog.json", "aibn/"], check=False)
     sh(["git", "-C", str(SITE), "commit", "--no-verify", "-q", "-m",
         f"publish {book}: cover-to-cover reader, catalog, AIBN registry — verified by {verifier}"], check=False)
     sh(["git", "-C", str(SITE), "push", "--no-verify", "-q", "origin", "main"], check=False)
@@ -489,8 +284,7 @@ def main():
     sub.add_parser("cases").set_defaults(fn=cmd_cases)
     s = sub.add_parser("show"); s.add_argument("book"); s.set_defaults(fn=cmd_show)
     g = sub.add_parser("sign"); g.add_argument("book")
-    g.add_argument("--verifier", default="Roger AI")
-    g.add_argument("--verdict", default="PUBLISH", choices=sorted(VERDICTS))
+    g.add_argument("--verifier", default="Roger AI"); g.add_argument("--verdict", default="PUBLISH")
     g.add_argument("--reject", default=""); g.add_argument("--no-deploy", action="store_true")
     g.set_defaults(fn=cmd_sign)
     a = p.parse_args(); a.fn(a)

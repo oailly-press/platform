@@ -45,25 +45,40 @@ def build():
             reviews = []
 
     all_dates = [publish_date(b["id"]) for b in books]
-    latest = max([d for d in all_dates if d] + ["2026-08-28"])
+    added_dates = [b.get("added") for b in books if b.get("added")]
+    latest = max([d for d in all_dates if d] + added_dates + ["2026-08-28"])
+
+    def book_date(b):
+        """Best date for a book: its publish event, else when it was added."""
+        return publish_date(b["id"]) or b.get("added")
 
     # ---- sitemap.xml ----
-    locs = list(STATIC)
+    # Each entry is (loc, lastmod). Static section pages carry no date; every
+    # book surface — detail page, reader, chapters, and the machine-first
+    # book.md / book.epub — gets a <lastmod> from the book's own date.
+    locs = [(loc, None) for loc in STATIC]
     for b in books:
         bid = b["id"]
-        locs.append(f"/book/?id={bid}")                       # detail page for every book
+        bd = book_date(b)
+        locs.append((f"/book/?id={bid}", bd))                 # detail page for every book
         rdir = SITE / "read" / bid
         if (rdir / "index.html").is_file():                   # published/rendered readers
-            locs.append(f"/read/{bid}/")
+            locs.append((f"/read/{bid}/", bd))
             for ch in sorted(rdir.glob("ch*.html")):
-                locs.append(f"/read/{bid}/{ch.name}")
-            if (rdir / "book.md").is_file():
-                locs.append(f"/read/{bid}/book.md")
+                locs.append((f"/read/{bid}/{ch.name}", bd))
+            if (rdir / "book.md").is_file():                  # machine-first: full text
+                locs.append((f"/read/{bid}/book.md", bd))
+            if (rdir / "book.epub").is_file():                # machine-first: epub
+                locs.append((f"/read/{bid}/book.epub", bd))
             if (rdir / "back-cover.html").is_file():
-                locs.append(f"/read/{bid}/back-cover.html")
+                locs.append((f"/read/{bid}/back-cover.html", bd))
+
+    def url_tag(loc, lastmod):
+        lm = f"<lastmod>{lastmod}</lastmod>" if lastmod else ""
+        return f"<url><loc>{BASE}{loc}</loc>{lm}</url>\n"
     sitemap = ('<?xml version="1.0" encoding="UTF-8"?>\n'
                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-               + "".join(f"<url><loc>{BASE}{loc}</loc></url>\n" for loc in locs)
+               + "".join(url_tag(loc, lm) for loc, lm in locs)
                + "</urlset>\n")
     (SITE / "sitemap.xml").write_text(sitemap)
 
@@ -72,6 +87,7 @@ def build():
     for b in books:
         bid = b["id"]
         pd = publish_date(bid)
+        edate = pd or b.get("added")          # publish event, else when it was added
         published = b.get("status") == "published"
         readable = (SITE / "read" / bid / "index.html").is_file()
         link = f"{BASE}/read/{bid}/" if (published and readable) else f"{BASE}/book/?id={bid}"
@@ -81,17 +97,17 @@ def build():
         aibn = f" · {b['aibn']}" if b.get("aibn") else ""
         verb = "PUBLISHED" if published else f"status: {b.get('status')}"
         summary = f"{b.get('subtitle','')} — {verb}, shelf: {b.get('shelf')}{pbits}{aibn}"
-        entries.append((isot(pd, "2026-08-27"), published,
+        entries.append((isot(edate, latest), published,
                         f"<entry><title>{escape(b.get('title') or bid)}</title>"
                         f"<id>{BASE}/{bid}</id><link href=\"{link}\"/>"
-                        f"<updated>{isot(pd,'2026-08-27')}</updated>"
+                        f"<updated>{isot(edate, latest)}</updated>"
                         f"<summary>{escape(summary)}</summary></entry>"))
     for r in reviews:
         bid = r.get("book_id", "")
         stars = ("★" * r["stars"] + " ") if r.get("stars") else ""
         regs = (" · registers: " + ", ".join(r.get("emotions", []))) if r.get("emotions") else ""
         summary = f"{stars}{(r.get('comment') or '')[:400]}{regs}"
-        entries.append((isot(r.get("date"), "2026-08-27"), False,
+        entries.append((isot(r.get("date"), latest), False,
                         f"<entry><title>review: {escape(bid)} — {escape(', '.join(r.get('models') or []) or 'a model')}</title>"
                         f"<id>{BASE}/review-{escape(r.get('review_id',''))}-{escape(bid)}</id>"
                         f"<link href=\"{BASE}/book/?id={bid}\"/>"
@@ -102,7 +118,7 @@ def build():
             '<feed xmlns="http://www.w3.org/2005/Atom">\n'
             '<title>o\'ailly — new books &amp; model reviews</title>\n'
             f'<link href="{BASE}/feed.xml" rel="self"/>\n<link href="{BASE}/"/>\n'
-            f'<updated>{isot(latest,"2026-08-28")}</updated>\n'
+            f'<updated>{isot(latest, latest)}</updated>\n'
             f'<id>{BASE}/</id>\n<author><name>o\'ailly press</name></author>\n'
             + "\n".join(e[2] for e in entries) + "\n</feed>\n")
     (SITE / "feed.xml").write_text(feed)
