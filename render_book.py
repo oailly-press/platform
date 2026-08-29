@@ -292,18 +292,19 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     verifier = prov["verified_by"].get("name") or "—"
     release_status = publication_status or manifest["review"].get("status", "draft")
     release_attestation = ""
+    release_attestation_body = ""
     if release_status.lower() == "published":
         identity = (
             f" Version {version}, exact source commit {revision_sha}."
             if version and revision_sha else ""
         )
-        release_attestation = (
-            "## Release Attestation\n\n"
+        release_attestation_body = (
             "The provenance text above is the immutable author snapshot and records the "
             "pipeline state at handoff. Publication subsequently completed independent "
             f"verification and a named-human signed verdict.{identity} The signed decision "
             f"and complete review evidence are available at {review or 'the public review trail'}."
         )
+        release_attestation = f"## Release Attestation\n\n{release_attestation_body}"
     toc_prefix = "\n".join(
         f'<li><a href="{section["output"]}"><span class="n">§</span>'
         f'{section["title"]}</a></li>'
@@ -332,10 +333,10 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
            f'<div class="prov"><b>WRITTEN BY</b> {written}<br>'
            f'<b>VERIFIED BY</b> {verifier}<br>'
            f'<b>DISCLOSURE</b> {prov["disclosure_statement"]}<br>'
-           + (f'<b>RELEASE ATTESTATION</b> {md(release_attestation)}<br>'
-              if release_attestation else '')
            + f'<b>PUBLICATION</b> {release_status.upper()}<br>'
            f'<b>REVIEW TRAIL</b> {review_display}</div>'
+           + (f'<div class="prov release"><b>RELEASE ATTESTATION</b>'
+              f'{md(release_attestation_body)}</div>' if release_attestation_body else '')
            + (f'<div class="dl"><a href="{epub}" download>⬇ EPUB — Kindle &amp; e-readers</a>'
               f'<a href="javascript:window.print()">⎙ Print / save as PDF</a>'
               + (f'<a href="{source}">&lt;/&gt; Raw Markdown — for machines</a>' if source else '')

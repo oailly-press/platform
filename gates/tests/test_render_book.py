@@ -126,6 +126,8 @@ class WebRenderTests(unittest.TestCase):
             )
             self.assertIn("exact source commit " + "a" * 40, full)
             self.assertIn("PUBLICATION</b> PUBLISHED", index)
+            self.assertIn('<div class="prov release"><b>RELEASE ATTESTATION</b>', index)
+            self.assertNotIn('<b>RELEASE ATTESTATION</b> <h2>', index)
 
     def test_front_and_back_covers_are_both_required_for_cover_navigation(self):
         with tempfile.TemporaryDirectory() as directory:
