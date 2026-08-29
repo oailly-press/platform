@@ -36,8 +36,18 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-REGISTRY = ROOT / "gh/site-repo/aibn/registry.json"
+
+def locate_registry(module_dir: Path) -> Path:
+    """Find the public registry in sibling, nested-checkout, or standalone layouts."""
+    candidates = (
+        module_dir.parent / "site-repo" / "aibn" / "registry.json",
+        module_dir.parent / "aibn" / "registry.json",
+        module_dir.parent / "gh" / "site-repo" / "aibn" / "registry.json",
+    )
+    return next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
+
+
+REGISTRY = locate_registry(Path(__file__).resolve().parent)
 PREFIX = "297"          # o'ailly AI-book prefix (EAN internal-use range; not a real ISBN)
 REG_GROUP = "00"        # founding registry group
 
