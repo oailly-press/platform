@@ -26,6 +26,11 @@ VARIANTS = {
                   "extra": "A plump segmented larva shown top-down as a vertical stack of about eight identical rounded-rectangular IC-package body segments joined by short ribbon-cable traces, each segment edged with a pair of small round vias; many short stubby prolegs drawn as bent pin-header stubs along both sides; a rounded head module at the top with two round solder-pad eyes and two very short antennae ending in vias."},
     "termite":   {"color": "warm amber-gold",
                   "extra": "A pale worker termite top-down: a rounded head module at the top with two strong forward mandibles drawn as angular caliper traces, a rectangular integrated-circuit thorax, and a long abdomen built from a vertical stack of rounded-rectangular chip modules; six segmented legs like bent pin headers; the linework pale and even so it reads as a blind builder."},
+    "leafcutter-ant": {"color": "fresh leaf-green",
+                  "extra": "A worker ant top-down, symmetric, carrying above its head a single large leaf segment drawn as a flat rounded-rectangular PCB with a via grid; a rectangular integrated-circuit thorax, a rounded segmented gaster abdomen of stacked chip modules, six bent-pin-header legs, two elbowed antennae ending in round vias, and two forward mandibles as angular caliper traces."},
+    "chrysalis": {"color": "soft teal-green", "extra": "A single chrysalis / pupa shown vertical and symmetric, its segmented casing drawn as stacked rounded-rectangular chip modules bound by ribbon-cable seams, a cremaster hook at the base as a bent pin, faint wing-bud outlines etched inside as dormant circuit traces waiting to power on."},
+    "atlas-moth": {"color": "light lavender purple",
+                  "extra": "A very large moth, top-down and perfectly symmetric, with broad swept triangular wings whose venation is a dense grid of circuit traces meeting at vias; each forewing tip carries a curved comma-shaped false-eye motif drawn as concentric solder-pad rings; a furry thorax rendered as a stacked-chip package; feathered comb antennae as parallel trace combs."},
 }
 import os
 _ONLY = {c.strip() for c in os.environ.get("OAILLY_CREATURES", "").split(",") if c.strip()}

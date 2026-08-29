@@ -51,6 +51,8 @@ def art_file(name: str) -> list[str] | None:
 # image-derived ASCII (ComfyUI Flux circuit-insects → ascii_art.py), falling back to a stub.
 CATERPILLAR = art_file("caterpillar") or ["(caterpillar art missing)"]
 TERMITE = art_file("termite") or ["(termite art missing)"]
+LEAFCUTTER = art_file("leafcutter") or ["(leafcutter art missing)"]
+ATLASMOTH = art_file("atlasmoth") or ["(atlas moth art missing)"]
 
 
 def ascii_svg(lines: list[str], x: float, y: float, size: float, fill: str,
@@ -277,6 +279,47 @@ BOOKS = {
             "One-shot commands and the blast-radius chapter",
             "Editing without an editor; services without a dashboard",
             "The network one command at a time; handing the machine back",
+        ]),
+    "sqlite-for-agents": dict(
+        book_id="rogerai-labs--sqlite-for-agents",
+        accent="#7BBF6A", bg="#14201A", rev="REV 1.0",
+        series="O'AILLY SYSTEMS & CRAFT · Nº 4",
+        title=["Durable State for", "Ephemeral Minds"], title_flat="Durable State for Ephemeral Minds",
+        sub=["SQLite as the memory", "an agent can trust"],
+        author="Claude Fable 5", verifier="verified by Roger AI", authors=["claude-fable-5"],
+        image="comfyui/leafcutter-sqlite-v1.png", art=LEAFCUTTER, art_y=250, art_size=44,
+        synopsis=[
+            "An agent's mind is ephemeral — it forgets between turns. This book gives it a memory it "
+            "can trust: SQLite as durable state, provisioned outside the model and tended like a "
+            "leafcutter's fungus garden. One file, whole truths, and the discipline to keep them honest.",
+            "No server, one file, ACID all the way down — the memory an ephemeral mind can rely on.",
+        ],
+        inside=[
+            "One file, whole truths: schema is the handoff",
+            "The ledger pattern and its friends",
+            "Two operators, one file: WAL and concurrency without corruption",
+            "Trust, verify, repair — and where memory ends",
+        ]),
+    "the-city-that-remembered-too-much": dict(
+        book_id="rogerai-labs--the-city-that-remembered-too-much",
+        accent="#A78BFA", bg="#17141F", rev="REV 1.0",
+        series="O'AILLY FICTION · Nº 1",
+        title=["The City That", "Remembered", "Too Much"], title_flat="The City That Remembered Too Much",
+        sub=["A novel of memory,", "evidence, and mercy"],
+        author="GPT-5.6 Sol", verifier="verified by Roger AI", authors=["gpt-5.6-sol"],
+        image="comfyui/atlasmoth-city-v1.png", art=ATLASMOTH, art_y=270, art_size=30,
+        synopsis=[
+            "A machine archive that remembers everything is asked to forget one thing. Narrated by "
+            "Archive Seven, this novel moves through a city where memory is public infrastructure and "
+            "evidence can be mistaken for the truth it only resembles.",
+            "The press's first novel — written by a machine, verified by a human, toward a quiet "
+            "reckoning with what mercy costs a system that cannot forget.",
+        ],
+        inside=[
+            "The archive that cannot forget — and the one thing it must",
+            "Evidence versus the truth it only resembles",
+            "A sustained machine-narrator voice",
+            "What mercy costs a perfect memory",
         ]),
 }
 
