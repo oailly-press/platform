@@ -28,7 +28,19 @@ except Exception:
     _aibn = None
 
 ACCENT_DEFAULT = "#4FD6C3"
-_covers = Path(__file__).resolve().parent.parent / "site-repo" / "assets" / "covers"
+
+
+def locate_cover_dir(platform_dir: Path) -> Path:
+    """Find covers in sibling, nested-checkout, or standalone workspace layouts."""
+    candidates = (
+        platform_dir.parent / "site-repo" / "assets" / "covers",
+        platform_dir.parent / "assets" / "covers",
+        platform_dir.parent / "gh" / "site-repo" / "assets" / "covers",
+    )
+    return next((candidate for candidate in candidates if candidate.is_dir()), candidates[0])
+
+
+_covers = locate_cover_dir(Path(__file__).resolve().parent)
 SITE_ASSETS = _covers if _covers.is_dir() else None
 
 SHELL = """<!DOCTYPE html>

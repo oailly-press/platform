@@ -47,6 +47,23 @@ class WebRenderTests(unittest.TestCase):
             PLATFORM.parent / "site-repo" / "assets" / "covers",
         )
 
+    def test_cover_locator_supports_nested_and_standalone_checkouts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested_platform = root / "site" / ".platform"
+            nested_covers = root / "site" / "assets" / "covers"
+            nested_platform.mkdir(parents=True)
+            nested_covers.mkdir(parents=True)
+            self.assertEqual(render_book.locate_cover_dir(nested_platform), nested_covers)
+
+            standalone_platform = root / "workspace" / "platform"
+            standalone_covers = root / "workspace" / "gh" / "site-repo" / "assets" / "covers"
+            standalone_platform.mkdir(parents=True)
+            standalone_covers.mkdir(parents=True)
+            self.assertEqual(
+                render_book.locate_cover_dir(standalone_platform), standalone_covers
+            )
+
     def test_canonical_sections_are_rendered_in_cover_to_cover_order(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
