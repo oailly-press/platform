@@ -69,6 +69,9 @@ body{{background:var(--bg);color:var(--fg);font-family:var(--rfont);line-height:
 .top .in{{max-width:760px;margin:0 auto;padding:10px 24px;display:flex;justify-content:space-between;align-items:center;gap:10px}}
 .wordmark{{font-family:var(--sans);font-weight:800;font-size:20px;color:var(--fg);text-decoration:none;flex-shrink:0}}
 .wordmark .ai{{color:var(--accent)}}
+.booktitle{{font-family:var(--sans);font-weight:600;font-size:14px;color:var(--muted);text-decoration:none;flex:1 1 auto;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 12px}}
+.booktitle:hover{{color:var(--fg)}}
+@media(max-width:640px){{.booktitle{{font-size:12.5px;text-align:left;padding:0 8px}}}}
 .tools{{display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end}}
 .tools button,.tools a.tbtn{{font-family:var(--mono);font-size:12px;color:var(--muted);background:none;border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer;text-decoration:none;line-height:1.4}}
 .tools button:hover,.tools a.tbtn:hover{{color:var(--fg);border-color:var(--muted)}}
@@ -131,6 +134,7 @@ nav.pager .next{{text-align:right;margin-left:auto}}
 <div id="progress"></div>
 <div class="top"><div class="in">
   <a class="wordmark" href="/">o'<span class="ai">ai</span>lly</a>
+  <a class="booktitle" href="index.html" title="{book_title} — contents">{book_title}</a>
   <div class="tools">
     <button onclick="rsz(-1)" title="smaller text" aria-label="decrease font size">A−</button>
     <button onclick="rsz(1)" title="larger text" aria-label="increase font size">A+</button>
@@ -244,7 +248,7 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
         book_isbn = _attr(aibn_rec["aibn"]) if aibn_rec else ""
         return SHELL.format(lang=book.get("language", "en"), page_title=page_title,
                             accent=accent, home="/", slug=slug,
-                            book_title_upper=book["title"].upper(), content=content,
+                            book_title_upper=book["title"].upper(), book_title=book["title"], content=content,
                             pyg=pyg, og_title=_attr(book["title"]), og_desc=og_desc,
                             og_url=og_url, og_image=og_img,
                             canonical=(canonical or og_url), og_image_alt=og_image_alt,
