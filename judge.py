@@ -73,19 +73,47 @@ def _declared_judge_verdict(text: str) -> str:
     return match.group(1).upper()
 
 
-def validate_judge_case(fork: Path, book: str, seats: dict, verdict: str) -> None:
+def validate_judge_case(
+    fork: Path,
+    book: str,
+    seats: dict,
+    verdict: str,
+    version: str,
+    revision_sha: str,
+) -> None:
     """Fail before any signature or release mutation if the case file is incomplete."""
     verdict = normalize_verdict(verdict)
     manifest = json.loads(_required_text(fork / "manifest.json", "manifest"))
     is_fiction = manifest.get("book", {}).get("shelf") == "fiction"
 
-    if sh(["git", "-C", str(fork), "rev-parse", "--verify", "v2^{commit}"], check=False).returncode:
-        raise SystemExit("case has no resolvable v2 tag")
+    if version == "v1" or not re.fullmatch(r"v[1-9][0-9]*", version):
+        raise SystemExit("case status must declare a revision version v2 or later")
+    if not re.fullmatch(r"[0-9a-f]{40}", revision_sha or ""):
+        raise SystemExit("case status must declare an exact revision_sha")
+    resolved = sh(
+        ["git", "-C", str(fork), "rev-parse", "--verify", f"{version}^{{commit}}"],
+        check=False,
+    )
+    if resolved.returncode:
+        raise SystemExit(f"case has no resolvable {version} tag")
+    if resolved.stdout.strip() != revision_sha:
+        raise SystemExit(
+            f"{version} resolves to {resolved.stdout.strip()}, not declared revision_sha "
+            f"{revision_sha}"
+        )
     if sh(
-        ["git", "-C", str(fork), "merge-base", "--is-ancestor", "v2", "HEAD"],
+        ["git", "-C", str(fork), "merge-base", "--is-ancestor", revision_sha, "HEAD"],
         check=False,
     ).returncode:
-        raise SystemExit("publisher main does not contain the tagged v2 revision")
+        raise SystemExit("publisher main does not contain the declared revision")
+    if sh(
+        [
+            "git", "-C", str(fork), "diff", "--quiet", revision_sha, "HEAD", "--",
+            ".", ":(exclude)review",
+        ],
+        check=False,
+    ).returncode:
+        raise SystemExit("publisher main differs from the declared revision outside review/")
 
     report = json.loads(_required_text(fork / "pass1-report.json", "Pass-1 report"))
     if report.get("verdict") != "PASS" or report.get("reject_count") != 0:
@@ -93,7 +121,7 @@ def validate_judge_case(fork: Path, book: str, seats: dict, verdict: str) -> Non
 
     if not C.panel_complete(seats):
         raise SystemExit("Pass-3 panel is incomplete or does not contain three distinct families")
-    review_dir = fork / "review" / "v2"
+    review_dir = fork / "review" / version
     for seat in C.SEATS:
         text = _required_text(review_dir / f"verify-{seat}.md", f"Pass-3 review {seat}", 800)
         C.validate_review(text, 3, is_fiction)
@@ -113,6 +141,12 @@ def validate_judge_case(fork: Path, book: str, seats: dict, verdict: str) -> Non
     for heading in ("JUDGE MODEL:", "CASE FILE:", "## Verdict", "## Reasoning"):
         if heading.lower() not in draft.lower():
             raise SystemExit(f"judge-model draft is missing {heading}")
+    case_line = next(
+        (line for line in draft.splitlines() if line.strip().upper().startswith("CASE FILE:")),
+        "",
+    )
+    if version not in case_line or revision_sha not in case_line:
+        raise SystemExit("judge-model draft CASE FILE must name the exact version and revision_sha")
     model_line = next(
         (line.split(":", 1)[1].strip() for line in draft.splitlines()
          if line.strip().upper().startswith("JUDGE MODEL:")),
@@ -140,7 +174,7 @@ def validate_judge_case(fork: Path, book: str, seats: dict, verdict: str) -> Non
         )
 
 
-def validate_release_inputs(book: str) -> None:
+def validate_release_inputs(book: str, version: str, revision_sha: str) -> None:
     """Validate persistent release destinations before the signed verdict is written."""
     cover = SITE / "assets" / "covers" / f"{book}-front.png"
     if not cover.is_file() or cover.stat().st_size < 100:
@@ -154,6 +188,13 @@ def validate_release_inputs(book: str) -> None:
         if status.get("book_id") != book or status.get("state") != "4-judge":
             raise SystemExit(
                 f"{label} status must identify {book} at 4-judge before publication"
+            )
+        if (
+            status.get("version_under_review") != version
+            or status.get("revision_sha") != revision_sha
+        ):
+            raise SystemExit(
+                f"{label} status does not match the validated revision identity"
             )
     catalog = json.loads(_required_text(SITE / "catalog.json", "catalog"))
     if not any(entry.get("id") == book for entry in catalog.get("books", [])):
@@ -172,19 +213,20 @@ def at_judge():
 def fork_and_pass(book):
     st = C.status_of(book)
     fork = C.fork_dir(book)
-    # pass-3 verify reviews live in review/v2
+    # Pass-3 reviews live under the version named by status (v2 or a corrective vN).
     return fork, st
 
 
 def read_case(book):
     fork, st = fork_and_pass(book)
-    rc = fork / "review" / "v2" / "REPORT-CARD.md"
+    version = st.get("version_under_review", "")
+    rc = fork / "review" / version / "REPORT-CARD.md"
     if not rc.is_file():
         rc = fork / "review" / "REPORT-CARD.md"
     verdicts = []
     for seat in ("A", "B", "C"):
         for name in (f"verify-{seat}.md", f"critic-{seat}.md"):
-            p = fork / "review" / "v2" / name
+            p = fork / "review" / version / name
             if p.is_file():
                 txt = p.read_text(encoding="utf-8", errors="replace")
                 model = next((l.split(":",1)[1].strip() for l in txt.splitlines()
@@ -352,11 +394,13 @@ def cmd_sign(a):
         raise SystemExit(f"{book} is not at 4-judge (state: {C.status_of(book)['state']}).")
 
     fork, st = fork_and_pass(book)
-    seats = C.load_seats(fork, "v2", book, 3)
-    validate_judge_case(fork, book, seats, verdict)
+    version = st.get("version_under_review", "")
+    revision_sha = st.get("revision_sha", "")
+    seats = C.load_seats(fork, version, book, 3)
+    validate_judge_case(fork, book, seats, verdict, version, revision_sha)
     accent = ACCENTS.get(book, "#4FD6C3")
     if verdict == "PUBLISH":
-        validate_release_inputs(book)
+        validate_release_inputs(book, version, revision_sha)
         artifact_preflight = preflight_release_artifacts(fork, book, accent)
         print(f"[preflight] disposable release verified ({artifact_preflight})")
 

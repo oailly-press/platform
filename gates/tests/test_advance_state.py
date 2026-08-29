@@ -21,6 +21,7 @@ SPEC.loader.exec_module(advance)
 
 class AdvanceStateTests(unittest.TestCase):
     book = "author--state-fixture"
+    revision_sha = "0123456789abcdef0123456789abcdef01234567"
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -49,6 +50,7 @@ class AdvanceStateTests(unittest.TestCase):
             "target": "3-verification",
             "mirrors": (self.subs, self.site),
             "version": "v2",
+            "revision_sha": self.revision_sha,
             "reviews_in": 0,
             "today": date(2026, 8, 28),
         }
@@ -68,6 +70,7 @@ class AdvanceStateTests(unittest.TestCase):
         self.assertEqual(statuses[0], statuses[1])
         self.assertEqual(statuses[0]["state"], "3-verification")
         self.assertEqual(statuses[0]["version_under_review"], "v2")
+        self.assertEqual(statuses[0]["revision_sha"], self.revision_sha)
         self.assertIsNone(statuses[0]["action_required"])
         self.assertEqual(statuses[0]["history"][-1]["from"], "2-revision")
         self.assertEqual(statuses[0]["history"][-1]["to"], "3-verification")
@@ -97,9 +100,34 @@ class AdvanceStateTests(unittest.TestCase):
             status["state"] = "1-critics"
             status["action_required"] = None
             path.write_text(json.dumps(status) + "\n", encoding="utf-8")
-        self.call(target="2-revision", version="v1", reviews_in=3, apply=True)
+        self.call(
+            target="2-revision",
+            version="v1",
+            revision_sha=None,
+            reviews_in=3,
+            apply=True,
+        )
         status = json.loads(self.paths[0].read_text(encoding="utf-8"))
         self.assertEqual(status["action_required"], "revise")
+
+    def test_verification_requires_exact_revision_identity(self):
+        with self.assertRaisesRegex(advance.StateError, "requires --version and --revision-sha"):
+            self.call(revision_sha=None)
+        with self.assertRaisesRegex(advance.StateError, "exact 40-character"):
+            self.call(revision_sha="661653af")
+
+    def test_judge_transition_preserves_verified_identity(self):
+        self.call(apply=True)
+        result = self.call(
+            target="4-judge",
+            version=None,
+            revision_sha=None,
+            reviews_in=3,
+            apply=True,
+        )
+        self.assertEqual(result["revision_sha"], self.revision_sha)
+        status = json.loads(self.paths[0].read_text(encoding="utf-8"))
+        self.assertEqual(status["revision_sha"], self.revision_sha)
 
     def test_locator_supports_canonical_and_mirror_checkouts(self):
         canonical_platform = self.root / "canonical" / "platform"

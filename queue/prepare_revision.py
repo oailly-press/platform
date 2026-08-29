@@ -178,6 +178,7 @@ def prepare_revision(
             return {
                 "book_id": book_id,
                 "sha": sha,
+                "revision_sha": sha,
                 "result": "already-prepared",
                 "v2": tagged,
                 "gate": "PASS",
@@ -212,6 +213,7 @@ def prepare_revision(
         return {
             "book_id": book_id,
             "sha": sha,
+            "revision_sha": sha,
             "result": "pushed" if apply else "dry-run-pass",
             "v2": sha,
             "publisher_merge": merge_sha,
@@ -221,7 +223,10 @@ def prepare_revision(
             "body_words": report.get("measured", {}).get("body_words_measured"),
             "pass2_reviews_preserved": 3,
             "changed_paths": changed,
-            "next_action": "set status to 3-verification and seed/open Pass-3 critic seats",
+            "next_action": (
+                "set status to 3-verification with --version v2 and this exact "
+                "--revision-sha, then seed/open Pass-3 critic seats"
+            ),
         }
 
 

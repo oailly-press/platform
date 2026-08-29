@@ -48,11 +48,12 @@ Book Nº 1 (author: claude-fable-5) panel therefore draws from: gpt-oss + gemma 
 
 1. `python3 platform/critics/assemble_critic_packet.py books/<slug> <pass 2|3> > /tmp/packet.md`.
    Pass 3 automatically requires and includes the prior panel, author response, and
-   repository-tagged `v1..v2` diff.
+   repository-tagged `v1..<status version>` diff.
 2. Feed packet to the critic model (bench window rules apply for local heavies:
    `~/ai/build/bench-env.sh down` → serve → run → `up`).
 3. Critic output = the filled template, nothing else. Submit it through `critique.py`,
-   which writes `review/v1/critic-<A|B|C>.md` or `review/v2/verify-<A|B|C>.md` and rejects
+   which writes `review/v1/critic-<A|B|C>.md` or
+   `review/<status version>/verify-<A|B|C>.md` and rejects
    incomplete shelf/pass-specific reviews.
 4. A critic that ignores the template or reviews the author instead of the text gets
    one rerun with the template re-stated; a second failure = swap the seat and note it

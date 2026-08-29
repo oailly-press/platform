@@ -104,6 +104,7 @@ class JudgePreflightTests(unittest.TestCase):
         git(self.fork, "add", ".")
         git(self.fork, "commit", "--quiet", "-m", "v2")
         git(self.fork, "tag", "v2")
+        self.revision_sha = git(self.fork, "rev-parse", "v2^{commit}").stdout.strip()
 
         review_dir = self.fork / "review" / "v2"
         review_dir.mkdir(parents=True)
@@ -122,7 +123,7 @@ class JudgePreflightTests(unittest.TestCase):
         (self.fork / "review" / "judge-verdict.md").write_text(
             "# Judge verdict\n\n"
             "JUDGE MODEL: gemini-3-pro + operator\n"
-            "CASE FILE: v2; review/v1 and review/v2; final report card\n\n"
+            f"CASE FILE: v2; revision_sha {self.revision_sha}; review/v1 and review/v2; final report card\n\n"
             "## Verdict\n**PUBLISH**\n\n"
             "## Reasoning\n"
             + "The complete case demonstrates that every blocking debt was resolved. " * 7,
@@ -146,8 +147,18 @@ class JudgePreflightTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    def validate(self, verdict="PUBLISH"):
+        return judge.validate_judge_case(
+            self.fork,
+            self.book,
+            self.seats,
+            verdict,
+            "v2",
+            self.revision_sha,
+        )
+
     def test_complete_independent_case_passes_preflight(self):
-        judge.validate_judge_case(self.fork, self.book, self.seats, "PUBLISH")
+        self.validate()
 
     def test_arbitrary_verdict_cannot_reach_release_train(self):
         with self.assertRaisesRegex(SystemExit, "exactly PUBLISH or REJECT"):
@@ -156,7 +167,7 @@ class JudgePreflightTests(unittest.TestCase):
     def test_missing_verification_file_fails_closed(self):
         (self.fork / "review" / "v2" / "verify-C.md").unlink()
         with self.assertRaisesRegex(SystemExit, "Pass-3 review C is missing"):
-            judge.validate_judge_case(self.fork, self.book, self.seats, "PUBLISH")
+            self.validate()
 
     def test_judge_family_must_differ_from_authors_and_critics(self):
         draft = self.fork / "review" / "judge-verdict.md"
@@ -165,11 +176,11 @@ class JudgePreflightTests(unittest.TestCase):
             encoding="utf-8",
         )
         with self.assertRaisesRegex(SystemExit, "not independent"):
-            judge.validate_judge_case(self.fork, self.book, self.seats, "PUBLISH")
+            self.validate()
 
     def test_requested_verdict_must_match_judge_model_draft(self):
         with self.assertRaisesRegex(SystemExit, "conflicts with judge-model draft"):
-            judge.validate_judge_case(self.fork, self.book, self.seats, "REJECT")
+            self.validate("REJECT")
 
     def test_release_inputs_fail_before_signature_when_cover_is_missing(self):
         site = self.root / "site"
@@ -179,7 +190,14 @@ class JudgePreflightTests(unittest.TestCase):
         (subs / "status").mkdir(parents=True)
         (site / "assets" / "covers").mkdir(parents=True)
         buildpy.write_text("executable fixture\n", encoding="utf-8")
-        status = json.dumps({"book_id": self.book, "state": "4-judge"})
+        status = json.dumps(
+            {
+                "book_id": self.book,
+                "state": "4-judge",
+                "version_under_review": "v2",
+                "revision_sha": self.revision_sha,
+            }
+        )
         (site / "status" / f"{self.book}.json").write_text(status, encoding="utf-8")
         (subs / "status" / f"{self.book}.json").write_text(status, encoding="utf-8")
         (site / "catalog.json").write_text(
@@ -192,15 +210,21 @@ class JudgePreflightTests(unittest.TestCase):
             mock.patch.object(judge, "BUILDPY", buildpy),
         ):
             with self.assertRaisesRegex(SystemExit, "front cover is missing"):
-                judge.validate_release_inputs(self.book)
+                judge.validate_release_inputs(self.book, "v2", self.revision_sha)
             (site / "assets" / "covers" / f"{self.book}-front.png").write_bytes(b"x" * 101)
-            judge.validate_release_inputs(self.book)
+            judge.validate_release_inputs(self.book, "v2", self.revision_sha)
             (subs / "status" / f"{self.book}.json").write_text(
                 json.dumps({"book_id": self.book, "state": "3-verification"}),
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(SystemExit, "must identify.*at 4-judge"):
-                judge.validate_release_inputs(self.book)
+                judge.validate_release_inputs(self.book, "v2", self.revision_sha)
+
+    def test_selected_tag_must_match_declared_sha(self):
+        with self.assertRaisesRegex(SystemExit, "not declared revision_sha"):
+            judge.validate_judge_case(
+                self.fork, self.book, self.seats, "PUBLISH", "v2", "0" * 40
+            )
 
     def test_disposable_release_runs_build_render_and_verifier(self):
         calls = []

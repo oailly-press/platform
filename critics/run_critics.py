@@ -9,6 +9,7 @@ the endpoint and chunked-review implementation used by that command.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import subprocess
@@ -52,34 +53,39 @@ def call_model(endpoint: str, model: str, prompt: str, timeout: int = 900) -> st
     return out
 
 
-def _chapter_delta(book_dir: Path, source: str) -> str:
+def _chapter_delta(book_dir: Path, source: str, version: str = "v2") -> str:
     result = subprocess.run(
         [
             "git", "-C", str(book_dir), "diff", "--no-ext-diff", "--unified=3",
-            "v1..v2", "--", source,
+            f"v1..{version}", "--", source,
         ],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
         raise ValueError(
-            "Pass 3 requires resolvable v1 and v2 tags: "
-            + (result.stderr.strip() or "git diff v1..v2 failed")
+            f"Pass 3 requires resolvable v1 and {version} tags: "
+            + (result.stderr.strip() or f"git diff v1..{version} failed")
         )
     return result.stdout or "(no changes to this chapter)"
 
 
-def _nonchapter_delta(book_dir: Path, chapter_sources: set[str]) -> str:
+def _nonchapter_delta(
+    book_dir: Path, chapter_sources: set[str], version: str = "v2"
+) -> str:
     """Return revision blocks for canonical/audit files not reviewed as chapters."""
     result = subprocess.run(
-        ["git", "-C", str(book_dir), "diff", "--no-ext-diff", "--unified=3", "v1..v2"],
+        [
+            "git", "-C", str(book_dir), "diff", "--no-ext-diff", "--unified=3",
+            f"v1..{version}",
+        ],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
         raise ValueError(
-            "Pass 3 requires resolvable v1 and v2 tags: "
-            + (result.stderr.strip() or "git diff v1..v2 failed")
+            f"Pass 3 requires resolvable v1 and {version} tags: "
+            + (result.stderr.strip() or f"git diff v1..{version} failed")
         )
     blocks = re.split(r"(?=^diff --git )", result.stdout, flags=re.MULTILINE)
     kept = []
@@ -102,10 +108,11 @@ def chunked_review(
     book_dir: Path | str,
     pass_no: int = 2,
     timeout: int = 900,
+    version: str = "v2",
 ) -> str:
     """Review a book chapter-by-chapter, then synthesize one complete review.
 
-    Pass 3 supplies the prior panel, author response, and per-chapter v1..v2 delta
+    Pass 3 supplies the prior panel, author response, and per-chapter v1-to-version delta
     so a small-context critic can actually verify debts instead of re-running Pass 2.
     """
     if pass_no not in (2, 3):
@@ -137,7 +144,7 @@ def chunked_review(
                 "This is Pass 3. Verify relevant Pass-2 debts against the author response, "
                 "the revised chapter, and its exact delta. Name regressions and still-open debts."
             )
-            delta = _chapter_delta(book_dir, source)
+            delta = _chapter_delta(book_dir, source, version)
             evidence = f"\n\n=== PASS-3 CASE FILE ===\n{case_file}\n\n=== CHAPTER DELTA ===\n{delta}"
         else:
             pass_rule = "This is Pass 2. Identify blocking debts in the submitted manuscript."
@@ -157,7 +164,7 @@ def chunked_review(
         )
 
     if pass_no == 3:
-        other_delta = _nonchapter_delta(book_dir, chapter_sources)
+        other_delta = _nonchapter_delta(book_dir, chapter_sources, version)
         if other_delta:
             other_prompt = (
                 "You are verifying the non-chapter portion of an o'ailly press Pass-3 revision. "
@@ -207,21 +214,31 @@ def tally_verdict(text: str, pass_no: int) -> str:
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        print("usage: run_critics.py <fork_dir> <2|3> <critics.json>", file=sys.stderr)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("fork_dir", type=Path)
+    parser.add_argument("pass_no", type=int, choices=(2, 3))
+    parser.add_argument("critics_file", type=Path)
+    parser.add_argument("--version", default=None)
+    args = parser.parse_args()
+    fork = args.fork_dir.resolve()
+    pass_no = args.pass_no
+    critics = json.loads(args.critics_file.read_text(encoding="utf-8"))
+    version = args.version or ("v1" if pass_no == 2 else "v2")
+    if not re.fullmatch(r"v[1-9][0-9]*", version):
+        print("error: version must look like v1, v2, ...", file=sys.stderr)
         return 2
-    fork = Path(sys.argv[1]).resolve()
-    pass_no = int(sys.argv[2])
-    if pass_no not in (2, 3):
-        print("error: pass must be 2 or 3", file=sys.stderr)
-        return 2
-    critics = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
-    version = "v1" if pass_no == 2 else "v2"
     review_dir = fork / "review" / version
     review_dir.mkdir(parents=True, exist_ok=True)
 
     packet = subprocess.run(
-        [sys.executable, str(HERE / "assemble_critic_packet.py"), str(fork), str(pass_no)],
+        [
+            sys.executable,
+            str(HERE / "assemble_critic_packet.py"),
+            str(fork),
+            str(pass_no),
+            "--version",
+            version,
+        ],
         capture_output=True,
         text=True,
         check=True,
@@ -234,7 +251,8 @@ def main() -> int:
         try:
             if critic.get("chunked"):
                 out = chunked_review(
-                    critic["endpoint"], critic["model"], fork, pass_no=pass_no
+                    critic["endpoint"], critic["model"], fork,
+                    pass_no=pass_no, version=version
                 )
             else:
                 out = call_model(critic["endpoint"], critic["model"], packet)

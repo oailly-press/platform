@@ -199,6 +199,40 @@ class CriticPacketTests(unittest.TestCase):
         self.assertIn("newly paid consequence", result.stdout)
         self.assertIn("diff --git a/ch01.md b/ch01.md", result.stdout)
 
+    def test_pass3_packet_uses_explicit_corrective_version(self):
+        commands = [
+            ["git", "init", "--quiet"],
+            ["git", "config", "user.name", "Critic Test"],
+            ["git", "config", "user.email", "critic@example.invalid"],
+            ["git", "add", "."],
+            ["git", "commit", "--quiet", "-m", "v1"],
+            ["git", "tag", "v1"],
+        ]
+        for command in commands:
+            subprocess.run(command, cwd=self.book, check=True)
+        (self.book / "ch01.md").write_text(
+            "# Arrival\n\nThe corrective revision pays the consequence.", encoding="utf-8"
+        )
+        subprocess.run(["git", "add", "ch01.md"], cwd=self.book, check=True)
+        subprocess.run(["git", "commit", "--quiet", "-m", "v3"], cwd=self.book, check=True)
+        subprocess.run(["git", "tag", "v3"], cwd=self.book, check=True)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(CRITICS / "assemble_critic_packet.py"),
+                str(self.book),
+                "3",
+                "--version",
+                "v3",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("DELTA (v1..v3 diff", result.stdout)
+        self.assertIn("corrective revision pays", result.stdout)
+
     def test_chunked_pass3_is_pass_aware_and_fiction_aware(self):
         prompts = []
 

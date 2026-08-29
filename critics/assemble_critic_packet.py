@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Assemble a critic prompt packet: instructions, template, manuscript, and evidence.
 
-    python3 assemble_critic_packet.py <book_dir> <2|3> [diff_file]
+    python3 assemble_critic_packet.py <book_dir> <2|3> [diff_file] [--version vN]
 
 Pass 2 supplies the complete manuscript. Pass 3 also supplies the three Pass-2
-reviews, the author's response, and the exact v1..v2 diff. If ``diff_file`` is
-omitted, the diff is read from the book repository's immutable v1 and v2 tags.
+reviews, the author's response, and the exact v1-to-declared-version diff. If
+``diff_file`` is omitted, the diff is read from immutable repository tags.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -43,7 +45,11 @@ def _pass3_case_file(book_dir: Path) -> str:
     return "\n".join(parts)
 
 
-def _pass3_evidence(book_dir: Path, diff_file: Path | None = None) -> str:
+def _pass3_evidence(
+    book_dir: Path, diff_file: Path | None = None, version: str = "v2"
+) -> str:
+    if not re.fullmatch(r"v[2-9][0-9]*", version):
+        raise ValueError("Pass 3 version must look like v2, v3, ...")
     case_file = _pass3_case_file(book_dir)
 
     if diff_file is not None:
@@ -57,22 +63,29 @@ def _pass3_evidence(book_dir: Path, diff_file: Path | None = None) -> str:
                 "diff",
                 "--no-ext-diff",
                 "--unified=3",
-                "v1..v2",
+                f"v1..{version}",
             ],
             capture_output=True,
             text=True,
         )
         if result.returncode != 0:
             raise ValueError(
-                "Pass 3 requires resolvable v1 and v2 tags: "
-                + (result.stderr.strip() or "git diff v1..v2 failed")
+                f"Pass 3 requires resolvable v1 and {version} tags: "
+                + (result.stderr.strip() or f"git diff v1..{version} failed")
             )
         delta = result.stdout
 
-    return case_file + f"\n\n=== DELTA (v1..v2 diff — Pass 3 scope) ===\n{delta}"
+    return case_file + (
+        f"\n\n=== DELTA (v1..{version} diff — Pass 3 scope) ===\n{delta}"
+    )
 
 
-def assemble_packet(book_dir: Path, pass_no: int, diff_file: Path | None = None) -> str:
+def assemble_packet(
+    book_dir: Path,
+    pass_no: int,
+    diff_file: Path | None = None,
+    version: str = "v2",
+) -> str:
     if pass_no not in (2, 3):
         raise ValueError("pass must be 2 or 3")
 
@@ -152,22 +165,23 @@ RULES
             parts.append(f"\n--- {relative} ---\n{artifact.read_text(encoding='utf-8')}")
 
     if pass_no == 3:
-        parts.append(_pass3_evidence(book_dir, diff_file))
+        parts.append(_pass3_evidence(book_dir, diff_file, version))
     return "\n".join(parts) + "\n"
 
 
 def main() -> int:
-    if len(sys.argv) not in (3, 4):
-        print(
-            "usage: assemble_critic_packet.py <book_dir> <2|3> [diff_file]",
-            file=sys.stderr,
-        )
-        return 2
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("book_dir", type=Path)
+    parser.add_argument("pass_no", type=int, choices=(2, 3))
+    parser.add_argument("diff_file", nargs="?", type=Path)
+    parser.add_argument("--version", default="v2")
+    args = parser.parse_args()
     try:
         packet = assemble_packet(
-            Path(sys.argv[1]).resolve(),
-            int(sys.argv[2]),
-            Path(sys.argv[3]).resolve() if len(sys.argv) == 4 else None,
+            args.book_dir.resolve(),
+            args.pass_no,
+            args.diff_file.resolve() if args.diff_file else None,
+            args.version,
         )
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)

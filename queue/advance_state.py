@@ -4,7 +4,8 @@
 The command is dry-run by default and stops at ``4-judge``. Publication remains owned
 by the signed judge release train; this tool cannot write ``5-published``.
 
-    python3 queue/advance_state.py ACCOUNT--BOOK 3-verification --version v2
+    python3 queue/advance_state.py ACCOUNT--BOOK 3-verification \
+      --version v2 --revision-sha 0123456789abcdef0123456789abcdef01234567
     # Inspect both proposed mirror changes, then repeat with --apply.
 
 Both status files are loaded and validated before either is replaced. The command
@@ -24,6 +25,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PLATFORM = HERE.parent
 SAFE_BID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*--[a-z0-9]+(?:-[a-z0-9]+)*$")
+SAFE_SHA = re.compile(r"^[0-9a-f]{40}$")
 ORDER = ["0-pending", "1-critics", "2-revision", "3-verification", "4-judge"]
 NEXT = dict(zip(ORDER, ORDER[1:]))
 META = {
@@ -88,6 +90,7 @@ def advance_state(
     target: str,
     mirrors: tuple[Path, Path],
     version: str | None = None,
+    revision_sha: str | None = None,
     reviews_in: int | None = None,
     message: str | None = None,
     allow_same: bool = False,
@@ -100,6 +103,8 @@ def advance_state(
         raise StateError("target must be a pre-publication state from 1-critics to 4-judge")
     if version is not None and not re.fullmatch(r"v[1-9][0-9]*", version):
         raise StateError("version must look like v1, v2, ...")
+    if revision_sha is not None and not SAFE_SHA.fullmatch(revision_sha):
+        raise StateError("revision-sha must be an exact 40-character lowercase commit SHA")
     if reviews_in is not None and not 0 <= reviews_in <= 3:
         raise StateError("reviews-in must be between 0 and 3")
 
@@ -124,9 +129,25 @@ def advance_state(
     elif NEXT.get(current) != target:
         raise StateError(f"refusing non-adjacent transition {current} -> {target}")
 
+    if target == "3-verification" and (version is None or revision_sha is None):
+        raise StateError("3-verification requires --version and --revision-sha")
+    if target == "4-judge":
+        recorded_versions = {status.get("version_under_review") for status in statuses}
+        recorded_shas = {status.get("revision_sha") for status in statuses}
+        if len(recorded_versions) != 1 or not next(iter(recorded_versions), None):
+            raise StateError("status mirrors lack one declared version_under_review")
+        if len(recorded_shas) != 1 or not SAFE_SHA.fullmatch(next(iter(recorded_shas), "")):
+            raise StateError("status mirrors lack one exact revision_sha")
+        if version is not None and version not in recorded_versions:
+            raise StateError("requested version differs from the verified status version")
+        if revision_sha is not None and revision_sha not in recorded_shas:
+            raise StateError("requested revision-sha differs from the verified status SHA")
+
     transition_day = today or date.today()
     today_text = transition_day.isoformat()
     position, plain, move, action = META[target]
+    if target == "3-verification" and version:
+        plain = f"{version} in — the panel verifies the exact declared revision and Pass-2 debts."
     updated = []
     for status in statuses:
         revised = dict(status)
@@ -141,6 +162,8 @@ def advance_state(
         )
         if version is not None:
             revised["version_under_review"] = version
+        if revision_sha is not None:
+            revised["revision_sha"] = revision_sha
         if reviews_in is not None:
             revised["reviews_in"] = reviews_in
         if message is not None:
@@ -174,6 +197,7 @@ def advance_state(
         "to": target,
         "result": "applied" if apply else "dry-run",
         "version_under_review": version or updated[0].get("version_under_review"),
+        "revision_sha": revision_sha or updated[0].get("revision_sha"),
         "reviews_in": reviews_in if reviews_in is not None else updated[0].get("reviews_in"),
         "mirrors": [str(path) for path in paths],
     }
@@ -184,6 +208,7 @@ def main() -> int:
     parser.add_argument("book")
     parser.add_argument("state", choices=tuple(META))
     parser.add_argument("--version")
+    parser.add_argument("--revision-sha")
     parser.add_argument("--reviews-in", type=int)
     parser.add_argument("--message")
     parser.add_argument("--allow-same", action="store_true")
@@ -195,6 +220,7 @@ def main() -> int:
             target=args.state,
             mirrors=find_mirrors(),
             version=args.version,
+            revision_sha=args.revision_sha,
             reviews_in=args.reviews_in,
             message=args.message,
             allow_same=args.allow_same,

@@ -35,6 +35,8 @@ ORG = "oailly-press"
 
 # book-id is used as a filesystem path and a git remote — validate hard (untrusted).
 SAFE_BID = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*--[a-z0-9]+(?:-[a-z0-9]+)*$')
+SAFE_VERSION = re.compile(r"^v[1-9][0-9]*$")
+SAFE_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 # model-name substring -> family. First match wins; explicit --family overrides.
 FAMILY_MAP = [
@@ -89,12 +91,14 @@ def status_of(book: str) -> dict:
     return json.loads(p.read_text())
 
 
-def pass_and_dir(state: str) -> tuple[int, str]:
+def pass_and_dir(state: str, version: str | None = None) -> tuple[int, str]:
     """Which pass a book in this state needs, and the review subdir the seats live in."""
     if state in ("0-pending", "1-critics"):
         return 2, "v1"          # pass-2 panel reviews the submitted v1
     if state == "3-verification":
-        return 3, "v2"          # pass-3 verification reviews the revised v2
+        if not version or version == "v1" or not SAFE_VERSION.fullmatch(version):
+            die("3-verification status must declare a revision version v2 or later")
+        return 3, version
     die(f"state {state!r} is not a critic state (need 0-pending, 1-critics, or 3-verification)")
 
 
@@ -112,6 +116,42 @@ def fork_dir(book: str) -> Path:
         if r.returncode != 0:
             die(f"could not clone fork {url}:\n{r.stderr.strip()[:300]}")
     return d
+
+
+def validate_revision_identity(fork: Path, status: dict) -> None:
+    """Fail closed unless Pass 3 is operating on the exact declared revision commit."""
+    if status.get("state") != "3-verification":
+        return
+    version = status.get("version_under_review", "")
+    revision_sha = status.get("revision_sha", "")
+    if version == "v1" or not SAFE_VERSION.fullmatch(version):
+        die("3-verification status lacks a valid revision version")
+    if not SAFE_SHA.fullmatch(revision_sha):
+        die("3-verification status lacks an exact 40-character revision_sha")
+    resolved = sh(
+        ["git", "-C", str(fork), "rev-parse", "--verify", f"{version}^{{commit}}"],
+        check=False,
+    )
+    if resolved.returncode != 0:
+        die(f"publisher fork has no resolvable {version} tag")
+    if resolved.stdout.strip() != revision_sha:
+        die(
+            f"{version} resolves to {resolved.stdout.strip() or 'nothing'}, not declared "
+            f"revision_sha {revision_sha}"
+        )
+    if sh(
+        ["git", "-C", str(fork), "merge-base", "--is-ancestor", revision_sha, "HEAD"],
+        check=False,
+    ).returncode:
+        die(f"publisher main does not contain declared revision {revision_sha}")
+    if sh(
+        [
+            "git", "-C", str(fork), "diff", "--quiet", revision_sha, "HEAD", "--",
+            ".", ":(exclude)review",
+        ],
+        check=False,
+    ).returncode:
+        die("publisher main differs from the declared revision outside review/")
 
 
 def manifest_families(fork: Path) -> list[str]:
@@ -222,10 +262,11 @@ def do_claim(book, model, family, actor, seat_pref) -> tuple[Path, str, str]:
     if not fam:
         die(f"cannot infer family for model {model!r}; pass --family")
     st = status_of(book)
-    pass_no, vdir = pass_and_dir(st["state"])
+    pass_no, vdir = pass_and_dir(st["state"], st.get("version_under_review"))
 
     for attempt in range(6):
         fork = fork_dir(book)
+        validate_revision_identity(fork, st)
         seats = load_seats(fork, vdir, book, pass_no)
         if fam in seats["author_families"]:
             die(f"family {fam!r} authored this book — a critic may not share the author family "
@@ -342,10 +383,11 @@ def do_submit(book, seat, text, actor=None) -> dict:
     if seat not in SEATS:
         die(f"seat must be one of {SEATS}")
     st = status_of(book)
-    pass_no, vdir = pass_and_dir(st["state"])
+    pass_no, vdir = pass_and_dir(st["state"], st.get("version_under_review"))
 
     for attempt in range(6):
         fork = fork_dir(book)
+        validate_revision_identity(fork, st)
         manifest = json.loads((fork / "manifest.json").read_text())
         is_fiction = manifest.get("book", {}).get("shelf") == "fiction"
         validate_review(text, pass_no, is_fiction)
@@ -401,13 +443,22 @@ def panel_tally(seats: dict) -> dict:
 
 # ---------------------------------------------------------------- serve a review
 
-def produce_via_endpoint(fork, endpoint, served_model, pass_no, chunked) -> str:
+def produce_via_endpoint(fork, endpoint, served_model, pass_no, version, chunked) -> str:
     """Import run_critics' model callers to fill a seat from a served endpoint."""
     sys.path.insert(0, str(HERE))
     import run_critics as rc
     if chunked:
-        return rc.chunked_review(endpoint, served_model, fork, pass_no=pass_no)
-    packet = sh([sys.executable, str(HERE / "assemble_critic_packet.py"), str(fork), str(pass_no)]).stdout
+        return rc.chunked_review(
+            endpoint, served_model, fork, pass_no=pass_no, version=version
+        )
+    packet = sh([
+        sys.executable,
+        str(HERE / "assemble_critic_packet.py"),
+        str(fork),
+        str(pass_no),
+        "--version",
+        version,
+    ]).stdout
     return rc.call_model(endpoint, served_model, packet)
 
 
@@ -427,8 +478,9 @@ def refresh_dashboard() -> dict:
         if state not in ("0-pending", "1-critics", "3-verification"):
             continue
         try:
-            pass_no, vdir = pass_and_dir(state)
+            pass_no, vdir = pass_and_dir(state, st.get("version_under_review"))
             fork = fork_dir(book)
+            validate_revision_identity(fork, st)
             seats = load_seats(fork, vdir, book, pass_no)
         except SystemExit:
             continue
@@ -487,9 +539,17 @@ def cmd_list(a):
 def cmd_packet(a):
     check_bid(a.book)
     st = status_of(a.book)
-    pass_no, _ = pass_and_dir(st["state"])
+    pass_no, version = pass_and_dir(st["state"], st.get("version_under_review"))
     fork = fork_dir(a.book)
-    r = sh([sys.executable, str(HERE / "assemble_critic_packet.py"), str(fork), str(pass_no)])
+    validate_revision_identity(fork, st)
+    r = sh([
+        sys.executable,
+        str(HERE / "assemble_critic_packet.py"),
+        str(fork),
+        str(pass_no),
+        "--version",
+        version,
+    ])
     sys.stdout.write(r.stdout)
 
 
@@ -533,8 +593,13 @@ def cmd_take(a):
             text = Path(a.self_file).read_text()
         else:
             st = status_of(a.book)
-            pass_no, _ = pass_and_dir(st["state"])
-            text = produce_via_endpoint(fork, a.endpoint, a.served_model, pass_no, a.chunked)
+            pass_no, version = pass_and_dir(
+                st["state"], st.get("version_under_review")
+            )
+            validate_revision_identity(fork, st)
+            text = produce_via_endpoint(
+                fork, a.endpoint, a.served_model, pass_no, version, a.chunked
+            )
     except SystemExit:
         do_release(a.book, seat)
         raise
@@ -549,9 +614,10 @@ def do_release(book, seat):
     check_bid(book)
     seat = seat.upper()
     st = status_of(book)
-    pass_no, vdir = pass_and_dir(st["state"])
+    pass_no, vdir = pass_and_dir(st["state"], st.get("version_under_review"))
     for _ in range(6):
         fork = fork_dir(book)
+        validate_revision_identity(fork, st)
         seats = load_seats(fork, vdir, book, pass_no)
         if seats["seats"].get(seat, {}).get("state") != "claimed":
             return  # nothing to release

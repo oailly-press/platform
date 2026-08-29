@@ -2,9 +2,9 @@
 """Validate a completed Pass-3 panel and prepare its final judge report card.
 
 The command is dry-run by default. It clones the publisher fork, proves that ``main``
-contains tagged ``v2`` without publisher changes outside ``review/``, validates both
-three-seat panels and their independence, and deterministically assembles
-``review/v2/REPORT-CARD.md`` with evidence fingerprints.
+contains the exact revision commit declared by status without publisher changes outside
+``review/``, validates both three-seat panels and their independence, and deterministically
+assembles the selected version's ``REPORT-CARD.md`` with evidence fingerprints.
 
     python3 queue/prepare_judge_case.py ACCOUNT--BOOK
     # Inspect the JSON and generated-card digest, then repeat with --apply.
@@ -50,8 +50,12 @@ def require_verification_state(status_file: Path, book_id: str) -> dict:
         raise RevisionError(
             f"publisher state must be 3-verification; got {status.get('state')!r}"
         )
-    if status.get("version_under_review") != "v2":
-        raise RevisionError("publisher status must identify v2 as the version under review")
+    version = status.get("version_under_review", "")
+    if version == "v1" or not re.fullmatch(r"v[1-9][0-9]*", version):
+        raise RevisionError("publisher status must identify a revision version v2 or later")
+    revision_sha = status.get("revision_sha", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", revision_sha):
+        raise RevisionError("publisher status must declare an exact revision_sha")
     return status
 
 
@@ -138,13 +142,14 @@ def assemble_report_card(
     pass2_reviews: dict,
     pass3_seats: dict,
     pass3_reviews: dict,
+    version: str,
+    revision_sha: str,
 ) -> str:
     v1 = git(fork, "rev-parse", "v1^{commit}").stdout.strip()
-    v2 = git(fork, "rev-parse", "v2^{commit}").stdout.strip()
     response = (fork / "response-to-findings.md").read_text(encoding="utf-8")
     tally = C.panel_tally(pass3_seats)
     lines = [
-        f"# Final report card — {book_id} v2",
+        f"# Final report card — {book_id} {version}",
         "",
         "Generated mechanically from the immutable two-pass review trail. The judge must",
         "read the underlying reviews; this card indexes evidence and does not replace it.",
@@ -152,7 +157,7 @@ def assemble_report_card(
         "## Case provenance",
         "",
         f"- v1 commit: `{v1}`",
-        f"- v2 commit: `{v2}`",
+        f"- {version} commit: `{revision_sha}`",
         f"- author response SHA-256: `{_digest(response)}`",
         "- Pass-2 reviews: 3; Pass-3 verification reviews: 3",
         "",
@@ -215,7 +220,7 @@ def assemble_report_card(
             "## Judge handoff",
             "",
             "The judge reviews the manuscript, full Pass-2 findings, author response, exact",
-            "v1→v2 delta, all Pass-3 ledgers, and this report card. Still-open findings, if",
+            f"v1→{version} delta, all Pass-3 ledgers, and this report card. Still-open findings, if",
             "any, remain visible; the mechanical tally does not sign or determine publication.",
             "",
         ]
@@ -228,30 +233,47 @@ def prepare_judge_case(
 ) -> dict:
     if not SAFE_BID.fullmatch(book_id):
         raise RevisionError("invalid book-id (expected account--book slug)")
-    require_verification_state(status_file, book_id)
+    status = require_verification_state(status_file, book_id)
+    version = status["version_under_review"]
+    revision_sha = status["revision_sha"]
     with tempfile.TemporaryDirectory(prefix="oailly-judge-case-") as temp_name:
         fork = Path(temp_name) / "fork"
         run(["git", "clone", "--quiet", "--", fork_url, str(fork)])
-        for version in ("v1", "v2"):
-            if git(fork, "rev-parse", "--verify", f"{version}^{{commit}}", check=False).returncode:
-                raise RevisionError(f"publisher fork has no resolvable {version} tag")
-        if git(fork, "merge-base", "--is-ancestor", "v2", "HEAD", check=False).returncode:
-            raise RevisionError("publisher main does not contain tagged v2")
-        if tree_without_reviews(fork, "v2") != tree_without_reviews(fork, "HEAD"):
-            raise RevisionError("publisher main differs from v2 outside review/")
+        for tag in ("v1", version):
+            if git(fork, "rev-parse", "--verify", f"{tag}^{{commit}}", check=False).returncode:
+                raise RevisionError(f"publisher fork has no resolvable {tag} tag")
+        resolved = git(fork, "rev-parse", f"{version}^{{commit}}").stdout.strip()
+        if resolved != revision_sha:
+            raise RevisionError(
+                f"{version} resolves to {resolved}, not declared revision_sha {revision_sha}"
+            )
+        if git(
+            fork, "merge-base", "--is-ancestor", revision_sha, "HEAD", check=False
+        ).returncode:
+            raise RevisionError("publisher main does not contain the declared revision")
+        if tree_without_reviews(fork, revision_sha) != tree_without_reviews(fork, "HEAD"):
+            raise RevisionError(
+                "publisher main differs from the declared revision outside review/"
+            )
         response = fork / "response-to-findings.md"
         if not response.is_file() or len(response.read_text(encoding="utf-8").strip()) < 200:
             raise RevisionError("case lacks a substantive response-to-findings.md")
         report = json.loads((fork / "pass1-report.json").read_text(encoding="utf-8"))
         if report.get("verdict") != "PASS" or report.get("reject_count") != 0:
-            raise RevisionError("v2 does not carry a clean Pass-1 report")
+            raise RevisionError(f"{version} does not carry a clean Pass-1 report")
 
         _, pass2_reviews = validate_panel(fork, book_id, "v1", 2)
-        pass3_seats, pass3_reviews = validate_panel(fork, book_id, "v2", 3)
+        pass3_seats, pass3_reviews = validate_panel(fork, book_id, version, 3)
         card = assemble_report_card(
-            book_id, fork, pass2_reviews, pass3_seats, pass3_reviews
+            book_id,
+            fork,
+            pass2_reviews,
+            pass3_seats,
+            pass3_reviews,
+            version,
+            revision_sha,
         )
-        card_path = fork / "review" / "v2" / "REPORT-CARD.md"
+        card_path = fork / "review" / version / "REPORT-CARD.md"
         if card_path.is_file():
             if card_path.read_text(encoding="utf-8") != card:
                 raise RevisionError("existing REPORT-CARD.md differs; refusing to overwrite it")
@@ -261,11 +283,12 @@ def prepare_judge_case(
             card_path.write_text(card, encoding="utf-8")
             git(fork, "config", "user.name", "oailly case operator")
             git(fork, "config", "user.email", "case@oailly.invalid")
-            git(fork, "add", "review/v2/REPORT-CARD.md")
+            relative_card = str(card_path.relative_to(fork))
+            git(fork, "add", relative_card)
             git(fork, "commit", "--quiet", "-m", f"Assemble final report card for {book_id}")
             commit = git(fork, "rev-parse", "HEAD^{commit}").stdout.strip()
             changed = git(fork, "diff", "--name-only", "HEAD^").stdout.splitlines()
-            if changed != ["review/v2/REPORT-CARD.md"]:
+            if changed != [relative_card]:
                 raise RevisionError("judge-case commit contains changes beyond the report card")
             if apply:
                 git(fork, "push", "--quiet", "origin", f"{commit}:refs/heads/main")
@@ -274,6 +297,8 @@ def prepare_judge_case(
         return {
             "book_id": book_id,
             "result": result,
+            "version_under_review": version,
+            "revision_sha": revision_sha,
             "publisher_commit": commit,
             "report_card_sha256": _digest(card),
             "pass2_reviews": 3,

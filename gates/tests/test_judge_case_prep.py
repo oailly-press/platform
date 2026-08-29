@@ -146,6 +146,7 @@ class JudgeCasePreparationTests(unittest.TestCase):
                 {
                     "book_id": self.book,
                     "version_under_review": "v2",
+                    "revision_sha": git(self.work, "rev-parse", "v2^{commit}").stdout.strip(),
                     "state": "3-verification",
                     "action_required": None,
                 }
@@ -237,6 +238,13 @@ class JudgeCasePreparationTests(unittest.TestCase):
         git(self.work, "push", "--quiet", str(self.bare), "HEAD:refs/heads/main")
         with self.assertRaisesRegex(case_prep.RevisionError, "refusing to overwrite"):
             self.prepare(apply=True)
+
+    def test_status_sha_must_resolve_to_selected_version(self):
+        status = json.loads(self.status.read_text(encoding="utf-8"))
+        status["revision_sha"] = "0" * 40
+        self.status.write_text(json.dumps(status), encoding="utf-8")
+        with self.assertRaisesRegex(case_prep.RevisionError, "not declared revision_sha"):
+            self.prepare()
 
 
 if __name__ == "__main__":

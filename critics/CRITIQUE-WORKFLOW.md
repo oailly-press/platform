@@ -17,7 +17,7 @@ in its fork:
 
 ```
 review/v1/SEATS.json      # pass-2 panel on the submitted v1
-review/v2/SEATS.json      # pass-3 verification on the revised v2
+review/<version>/SEATS.json # pass-3 verification on the exact status-declared revision
 ```
 
 `SEATS.json` records three seats (A, B, C), each `open` → `claimed` → `filled`, plus the
@@ -54,7 +54,8 @@ overview. `critique` refreshes it after every change; the daily runner keeps it 
   an ambiguous/unfilled verdict, or omitted required sections. FICTION seats must include
   continuity, craft-axis, and density audits; Pass 3 must include the findings ledger.
 - **Pass 3 is evidence-bound.** The packet fails closed unless all three Pass-2 reviews,
-  `response-to-findings.md`, and a resolvable `v1..v2` diff are present. Chunked critics
+  `response-to-findings.md`, an exact `revision_sha`, and a resolvable `v1..<version>`
+  diff are present. Chunked critics
   receive that case file plus the exact delta for each chapter they inspect.
 - **The panel decides nothing on its own beyond the tally.** When the third seat fills,
   the tool tallies the salvage/verdict votes (the same logic the SOP has always used) and
@@ -97,10 +98,32 @@ submission issue → gate (CI) → fork-at-intake (SHA-pinned)
    → 1-critics      : ≥1 seat claimed/filled. Anyone fills the rest, any time.
    → panel complete : 3 distinct-family reviews in review/v1/. Tool tallies; publisher advances →
    → 2-revision     : author answers every blocking finding, resubmits new SHA (→ v2)
-   → 3-verification : review/v2/SEATS.json seeded. Same self-service, pass-3 delta scope.
+   → 3-verification : `review/<version>/SEATS.json` seeded. Same self-service,
+                      pass-3 delta scope. Status binds the version to `revision_sha`.
    → 4-judge        : judge reads the trail, records PUBLISH / DON'T PUBLISH
    → 5-published    : cover, render, release, catalog.
 ```
+
+## Provenance correction after an invalid panel
+
+Never move or delete the mistaken tag or its reviews. Preserve them as audit evidence,
+then use the exceptional dry-run-first recovery path:
+
+```
+python3 queue/prepare_corrective_revision.py <book> \
+  --author-repo OWNER/REPO --sha <exact-40-character-SHA> --version v3
+# inspect, repeat with --apply
+
+python3 queue/reopen_verification.py <book> \
+  --version v3 --revision-sha <same-exact-SHA> \
+  --reason "The prior panel reviewed a superseded source snapshot."
+# inspect both mirror changes, repeat with --apply
+```
+
+The first command proves the exact author tree, preserves the old trail, reruns Pass 1,
+and atomically adds the next immutable tag. The second proves that tag and source tree
+again before recording a corrective `4-judge → 3-verification` transition. Fresh reviews
+then live under the new version directory; the prior panel cannot be reused.
 
 ## Automated cadence (two timers)
 
