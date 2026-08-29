@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[1]                       # ~/ai/books-by-ai
+ROOT = HERE.parents[2]                       # ~/ai/books-by-ai
 SITE = ROOT / "gh/site-repo"
 REVS = ROOT / "gh/reviews-repo"
 FORKS = HERE / ".forks"                      # local clones, gitignored

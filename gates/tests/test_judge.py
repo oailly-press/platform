@@ -160,6 +160,10 @@ class JudgePreflightTests(unittest.TestCase):
     def test_complete_independent_case_passes_preflight(self):
         self.validate()
 
+    def test_workspace_paths_resolve_without_duplicate_gh_segment(self):
+        self.assertEqual(judge.SITE, PLATFORM.parent / "site-repo")
+        self.assertEqual(judge.SUBS, PLATFORM.parent / "submissions-repo")
+
     def test_arbitrary_verdict_cannot_reach_release_train(self):
         with self.assertRaisesRegex(SystemExit, "exactly PUBLISH or REJECT"):
             judge.normalize_verdict("publish-ish")

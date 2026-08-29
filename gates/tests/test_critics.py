@@ -58,6 +58,10 @@ paragraph repeats context and can be compressed without losing voice or causalit
 
 
 class CriticValidationTests(unittest.TestCase):
+    def test_workspace_paths_resolve_without_duplicate_gh_segment(self):
+        self.assertEqual(critique.SITE, PLATFORM.parent / "site-repo")
+        self.assertEqual(critique.REVS, PLATFORM.parent / "reviews-repo")
+
     def test_fiction_pass2_complete_review_is_accepted(self):
         text = fiction_review(2, "SALVAGEABLE — findings below")
         critique.validate_review(text, 2, True)
