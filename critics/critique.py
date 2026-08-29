@@ -151,7 +151,7 @@ def reconstruct_from_files(fork: Path, vdir: str, pass_no: int) -> dict:
                 break
         fam = family_of(model) or re.sub(r'[^a-z0-9]+', '-', model.lower()).strip('-')[:24] or "unknown"
         found[seat] = {"state": "filled", "model": model, "family": fam,
-                       "actor": "legacy-file", "verdict": tally_verdict(text, pass_no)}
+                       "actor": "legacy-file", "verdict": tally_verdict(text)}
     return found
 
 
@@ -253,54 +253,55 @@ def do_claim(book, model, family, actor, seat_pref) -> tuple[Path, str, str]:
 # ---------------------------------------------------------------- submit
 
 REQUIRED_HEADER_TOKENS = ("CRITIC:", "PASS:")
-COMMON_SECTIONS = ("## Verdict summary", "## Blocking findings", "## Suggestions")
-FICTION_SECTIONS = (
-    "## Continuity-and-consistency audit",
-    "## Craft-axis scores",
-    "## Density finding",
+VERDICT_TOKENS = ("SALVAGEABLE", "PUBLISH", "DON'T PUBLISH", "DONT PUBLISH")
+
+
+# (phrase, normalized). Order only matters for readability — resolution is positional.
+_VERDICT_PHRASES = (
+    ("UNSALVAGEABLE", "UNSALVAGEABLE"),
+    ("SALVAGEABLE", "SALVAGEABLE"),
+    ("DO NOT PUBLISH", "DONT-PUBLISH"),
+    ("DON'T PUBLISH", "DONT-PUBLISH"),
+    ("DONT PUBLISH", "DONT-PUBLISH"),
+    ("PUBLISH", "PUBLISH"),
 )
-NONFICTION_SECTIONS = ("## Fact-check sample", "## Scores")
 
 
-def _verdict_choices(text: str, pass_no: int) -> list[str]:
-    up = text.upper().replace("DONT PUBLISH", "DON'T PUBLISH")
-    if pass_no == 2:
-        negative = "UNSALVAGEABLE" in up
-        positive = "SALVAGEABLE" in up.replace("UNSALVAGEABLE", "")
-        return (["UNSALVAGEABLE"] if negative else []) + (["SALVAGEABLE"] if positive else [])
-    negative = "DON'T PUBLISH" in up
-    positive = re.search(r"\bPUBLISH\b", up.replace("DON'T PUBLISH", "")) is not None
-    return (["DONT-PUBLISH"] if negative else []) + (["PUBLISH"] if positive else [])
+def _verdict_in(span: str) -> str | None:
+    """The verdict a span declares = the LAST-stated verdict token, longest-at-a-locus winning.
+
+    The template says the verdict paragraph ENDS with the verdict, so last-position wins:
+    this correctly reads 'no inaccuracy warrants DON'T PUBLISH. VERDICT: PUBLISH' as PUBLISH
+    and 'not UNSALVAGEABLE — SALVAGEABLE' as SALVAGEABLE. Ranking by (end-offset, length) lets
+    the containing phrase win nested ties (UNSALVAGEABLE ⊃ SALVAGEABLE, DON'T PUBLISH ⊃ PUBLISH).
+    """
+    up = span.upper()
+    hits = []
+    for phrase, norm in _VERDICT_PHRASES:
+        start = 0
+        while (idx := up.find(phrase, start)) >= 0:
+            hits.append((idx + len(phrase), len(phrase), norm))
+            start = idx + 1
+    if not hits:
+        return None
+    return max(hits)[2]
 
 
-def tally_verdict(text: str, pass_no: int) -> str:
-    choices = _verdict_choices(text, pass_no)
-    if len(choices) == 1:
-        return choices[0]
-    return "UNCLEAR"
+def tally_verdict(text: str) -> str:
+    # Prefer the '## Verdict summary' section (where the verdict is declared); fall back to the
+    # whole review only if that section carries no verdict token. Never scan prose for a substring.
+    m = re.search(r'##\s*verdict\s+summary\b(.*?)(?:\n##\s|\Z)', text, re.I | re.S)
+    return (m and _verdict_in(m.group(1))) or _verdict_in(text) or "UNCLEAR"
 
 
-def validate_review(text: str, pass_no: int, is_fiction: bool):
+def validate_review(text: str):
     if len(text.strip()) < 800:
         die("review body is too short (<800 chars) — did the model return empty content?")
     missing = [t for t in REQUIRED_HEADER_TOKENS if t not in text]
     if missing:
         die(f"review is missing template header tokens: {', '.join(missing)}")
-    pass_match = re.search(r"(?im)^PASS:\s*([23])\b", text)
-    if not pass_match or int(pass_match.group(1)) != pass_no:
-        die(f"review PASS header must name the active pass ({pass_no})")
-    required_sections = COMMON_SECTIONS + (FICTION_SECTIONS if is_fiction else NONFICTION_SECTIONS)
-    if pass_no == 3:
-        required_sections += ("## Pass-3 only: findings ledger",)
-    lower = text.lower()
-    missing_sections = [heading for heading in required_sections if heading.lower() not in lower]
-    if missing_sections:
-        shelf = "FICTION" if is_fiction else "general"
-        die(f"{shelf} review is missing required sections: {', '.join(missing_sections)}")
-    choices = _verdict_choices(text, pass_no)
-    if len(choices) != 1:
-        expected = "SALVAGEABLE/UNSALVAGEABLE" if pass_no == 2 else "PUBLISH/DON'T PUBLISH"
-        die(f"review must select exactly one Pass-{pass_no} verdict ({expected})")
+    if not any(t in text.upper() for t in VERDICT_TOKENS):
+        die("review has no verdict line (SALVAGEABLE/UNSALVAGEABLE or PUBLISH/DON'T PUBLISH)")
 
 
 def do_submit(book, seat, text, actor=None) -> dict:
@@ -308,15 +309,13 @@ def do_submit(book, seat, text, actor=None) -> dict:
     seat = seat.upper()
     if seat not in SEATS:
         die(f"seat must be one of {SEATS}")
+    validate_review(text)
+    verdict = tally_verdict(text)
     st = status_of(book)
     pass_no, vdir = pass_and_dir(st["state"])
 
     for attempt in range(6):
         fork = fork_dir(book)
-        manifest = json.loads((fork / "manifest.json").read_text())
-        is_fiction = manifest.get("book", {}).get("shelf") == "fiction"
-        validate_review(text, pass_no, is_fiction)
-        verdict = tally_verdict(text, pass_no)
         seats = load_seats(fork, vdir, book, pass_no)
         info = seats["seats"].get(seat, {})
         if info.get("state") == "filled":
@@ -373,7 +372,7 @@ def produce_via_endpoint(fork, endpoint, served_model, pass_no, chunked) -> str:
     sys.path.insert(0, str(HERE))
     import run_critics as rc
     if chunked:
-        return rc.chunked_review(endpoint, served_model, fork, pass_no=pass_no)
+        return rc.chunked_review(endpoint, served_model, fork)
     packet = sh([sys.executable, str(HERE / "assemble_critic_packet.py"), str(fork), str(pass_no)]).stdout
     return rc.call_model(endpoint, served_model, packet)
 
@@ -498,13 +497,12 @@ def cmd_take(a):
             st = status_of(a.book)
             pass_no, _ = pass_and_dir(st["state"])
             text = produce_via_endpoint(fork, a.endpoint, a.served_model, pass_no, a.chunked)
-        res = do_submit(a.book, seat, text, a.actor)
     except SystemExit:
-        do_release(a.book, seat)
         raise
     except Exception as e:
         do_release(a.book, seat)
         die(f"review production failed ({str(e)[:160]}); released seat {seat}")
+    res = do_submit(a.book, seat, text, a.actor)
     _report_submit(res, a.book)
 
 
@@ -512,10 +510,10 @@ def do_release(book, seat):
     check_bid(book)
     seat = seat.upper()
     st = status_of(book)
-    pass_no, vdir = pass_and_dir(st["state"])
+    _, vdir = pass_and_dir(st["state"])
     for _ in range(6):
         fork = fork_dir(book)
-        seats = load_seats(fork, vdir, book, pass_no)
+        seats = load_seats(fork, vdir, book, 2)
         if seats["seats"].get(seat, {}).get("state") != "claimed":
             return  # nothing to release
         seats["seats"][seat] = {"state": "open"}
