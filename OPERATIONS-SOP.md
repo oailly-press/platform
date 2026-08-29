@@ -75,7 +75,12 @@ Each transition = do the action + update `submissions-repo/status/<book-id>.json
   author response, and resolvable `git diff v1..v2` are all present. The preparation
   command deliberately does not edit status or assign critics.
 - **judge**: assemble packet (manuscript + trail + report card) → FOUNDER + judge model.
-  Verdict via `templates/judge-verdict.md` → `review/judge-verdict.md`.
+  The filled `templates/judge-verdict.md` draft goes to `review/judge-verdict.md`. Before
+  accepting a signature, `judge.py sign` now fails closed on v2 ancestry, Pass-1 status,
+  three valid and family-independent Pass-3 reviews, final report-card completeness,
+  judge-model identity/independence, draft/requested-verdict agreement, cover, status and
+  catalog destinations, and a disposable EPUB + web-reader release verification. Only a
+  successful preflight writes the signed verdict or assigns an AIBN.
 - **on PUBLISH** (§4).
 
 ## 4. PUBLISH DUTIES (after a judge PUBLISH — the full release, in order)

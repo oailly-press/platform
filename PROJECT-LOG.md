@@ -1,5 +1,25 @@
 # Platform project log
 
+## 2026-08-28 — Judge boundary made fail-closed
+
+- Repaired a release-time undefined organization constant that would have stopped reader
+  rendering only after the signed verdict had already been committed.
+- Restricted executable verdicts to `PUBLISH` or `REJECT`; both now require state
+  `4-judge` and a complete case rather than allowing an early rejection or an arbitrary
+  string to enter the release branch.
+- Added a pre-signature case audit for v2 ancestry, clean Pass 1, three valid Pass-3 files
+  from distinct non-author families, a substantive final report card, and an independent
+  identified judge model with one unambiguous matching draft verdict.
+- Publication additionally requires the cover, both status records, catalog entry, build
+  environment, and a successful disposable EPUB/web render plus release verification.
+  These checks occur before the public signature or AIBN mutation.
+- Verdict-trail pushes now fail loudly, matching signed verdicts are idempotent, rejected
+  books no longer consume an AIBN, and the signature text no longer falsely claims every
+  Pass-3 panel was unanimous.
+- Added judge regressions covering complete cases, invalid/mismatched verdicts, missing
+  verification evidence, judge-family independence, release inputs, repository URLs,
+  and disposable artifact preflight.
+
 ## 2026-08-28 — Exact-SHA revision ingestion hardened
 
 - Added a fail-closed, dry-run-first revision preparer for the previously manual

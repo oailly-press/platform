@@ -17,6 +17,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -29,15 +30,134 @@ import critique as C             # noqa: E402  (fork_dir, status_of, load_seats,
 
 SITE = ROOT / "gh/site-repo"
 SUBS = ROOT / "gh/submissions-repo"
+ORG = "oailly-press"
 APP_ID = "a14ad26d-62c0-4e37-b1ba-9904da85761b"
 BUILDPY = ROOT / ".buildenv/bin/python"
+VERDICTS = {"PUBLISH", "REJECT"}
 
 
 def sh(cmd, cwd=None, check=True):
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    try:
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    except OSError as exc:
+        raise SystemExit(f"error: cannot execute {cmd[0]}: {exc}") from exc
     if check and r.returncode != 0:
         raise SystemExit(f"error: {' '.join(map(str,cmd))}\n{r.stderr.strip()[:400]}")
     return r
+
+
+def normalize_verdict(value: str) -> str:
+    verdict = (value or "").strip().upper()
+    if verdict not in VERDICTS:
+        raise SystemExit("verdict must be exactly PUBLISH or REJECT")
+    return verdict
+
+
+def _required_text(path: Path, label: str, minimum: int = 1) -> str:
+    if not path.is_file():
+        raise SystemExit(f"{label} is missing: {path}")
+    text = path.read_text(encoding="utf-8", errors="replace").strip()
+    if len(text) < minimum:
+        raise SystemExit(f"{label} is incomplete ({len(text)} characters; need {minimum})")
+    return text
+
+
+def _declared_judge_verdict(text: str) -> str:
+    match = re.search(
+        r"(?im)^## Verdict\s*\n+\s*\*{0,2}(PUBLISH WITH CONDITIONS|PUBLISH|REJECT)"
+        r"\*{0,2}\s*$",
+        text,
+    )
+    if not match:
+        raise SystemExit("judge draft must select one unambiguous verdict under ## Verdict")
+    return match.group(1).upper()
+
+
+def validate_judge_case(fork: Path, book: str, seats: dict, verdict: str) -> None:
+    """Fail before any signature or release mutation if the case file is incomplete."""
+    verdict = normalize_verdict(verdict)
+    manifest = json.loads(_required_text(fork / "manifest.json", "manifest"))
+    is_fiction = manifest.get("book", {}).get("shelf") == "fiction"
+
+    if sh(["git", "-C", str(fork), "rev-parse", "--verify", "v2^{commit}"], check=False).returncode:
+        raise SystemExit("case has no resolvable v2 tag")
+    if sh(
+        ["git", "-C", str(fork), "merge-base", "--is-ancestor", "v2", "HEAD"],
+        check=False,
+    ).returncode:
+        raise SystemExit("publisher main does not contain the tagged v2 revision")
+
+    report = json.loads(_required_text(fork / "pass1-report.json", "Pass-1 report"))
+    if report.get("verdict") != "PASS" or report.get("reject_count") != 0:
+        raise SystemExit("tagged revision does not carry a clean Pass-1 report")
+
+    if not C.panel_complete(seats):
+        raise SystemExit("Pass-3 panel is incomplete or does not contain three distinct families")
+    review_dir = fork / "review" / "v2"
+    for seat in C.SEATS:
+        text = _required_text(review_dir / f"verify-{seat}.md", f"Pass-3 review {seat}", 800)
+        C.validate_review(text, 3, is_fiction)
+
+    report_card = _required_text(review_dir / "REPORT-CARD.md", "final report card", 300)
+    card_lower = report_card.lower()
+    missing_card = [
+        token for token in ("finding", "score", "recommend") if token not in card_lower
+    ]
+    if missing_card:
+        raise SystemExit(
+            "final report card must summarize findings, scores, and recommendations; missing: "
+            + ", ".join(missing_card)
+        )
+
+    draft = _required_text(fork / "review" / "judge-verdict.md", "judge-model draft", 300)
+    for heading in ("JUDGE MODEL:", "CASE FILE:", "## Verdict", "## Reasoning"):
+        if heading.lower() not in draft.lower():
+            raise SystemExit(f"judge-model draft is missing {heading}")
+    model_line = next(
+        (line.split(":", 1)[1].strip() for line in draft.splitlines()
+         if line.strip().upper().startswith("JUDGE MODEL:")),
+        "",
+    )
+    if not model_line or model_line.lower().startswith("model +"):
+        raise SystemExit("judge-model draft must identify the actual judge model")
+    judge_family = C.family_of(model_line)
+    if not judge_family:
+        family_match = re.search(r"(?i)\bfamily\s*[:= ]\s*([a-z0-9-]+)", model_line)
+        judge_family = family_match.group(1).lower() if family_match else None
+    excluded = set(seats.get("author_families", [])) | C.seated_families(seats)
+    if not judge_family:
+        raise SystemExit("judge model family cannot be inferred; include 'family:NAME' in its header")
+    if judge_family in excluded:
+        raise SystemExit(
+            f"judge family {judge_family!r} is not independent of author/critic families"
+        )
+    draft_verdict = _declared_judge_verdict(draft)
+    if draft_verdict == "PUBLISH WITH CONDITIONS":
+        raise SystemExit("conditional publication is not implemented; resolve conditions first")
+    if draft_verdict != verdict:
+        raise SystemExit(
+            f"requested verdict {verdict} conflicts with judge-model draft {draft_verdict}"
+        )
+
+
+def validate_release_inputs(book: str) -> None:
+    """Validate persistent release destinations before the signed verdict is written."""
+    cover = SITE / "assets" / "covers" / f"{book}-front.png"
+    if not cover.is_file() or cover.stat().st_size < 100:
+        raise SystemExit(f"front cover is missing or empty: {cover}")
+    if not BUILDPY.is_file():
+        raise SystemExit(f"build Python is missing: {BUILDPY}")
+    for base, label in ((SUBS, "submissions"), (SITE, "site mirror")):
+        status = json.loads(
+            _required_text(base / "status" / f"{book}.json", f"{label} status")
+        )
+        if status.get("book_id") != book or status.get("state") != "4-judge":
+            raise SystemExit(
+                f"{label} status must identify {book} at 4-judge before publication"
+            )
+    catalog = json.loads(_required_text(SITE / "catalog.json", "catalog"))
+    if not any(entry.get("id") == book for entry in catalog.get("books", [])):
+        raise SystemExit(f"catalog has no entry for {book}")
 
 
 def at_judge():
@@ -120,11 +240,17 @@ def finalize_verdict(fork: Path, book, verifier, verdict, reject_reason):
     jvp = fork / "review" / "judge-verdict.md"
     existing = jvp.read_text() if jvp.is_file() else ""
     body = existing
+    if "## SIGNED VERDICT" in body.upper():
+        signed_block = re.split(r"(?i)## SIGNED VERDICT", body, maxsplit=1)[1]
+        signed = re.search(r"(?im)^\*\*(PUBLISH|REJECT)\*\*\s*$", signed_block)
+        if signed and signed.group(1).upper() == verdict:
+            return False
+        raise SystemExit("judge verdict is already signed with a different or ambiguous result")
     # strip any DRAFT banner and unsigned sign-off; append the signed verdict block
     stamp = (f"\n\n---\n\n## SIGNED VERDICT\n"
              f"**{verdict}**\n\n"
              f"Human verifier: **{verifier}** (o'ailly press steward) · Date: {date.today().isoformat()}\n"
-             f"Judge process: pass-3 panel unanimous; case reviewed; signed under founder direction "
+             f"Judge process: pass-3 case reviewed; signed under founder direction "
              f"to expedite (2026-08).\n")
     if verdict == "REJECT":
         stamp += f"\nRejection reasons: {reject_reason or '(see trail)'}\n30-day cooldown; resubmission restarts at Pass 1.\n"
@@ -135,26 +261,42 @@ def finalize_verdict(fork: Path, book, verifier, verdict, reject_reason):
     jvp.write_text(body + stamp)
     sh(["git", "-C", str(fork), "add", str(jvp.relative_to(fork))])
     sh(["git", "-C", str(fork), "commit", "--quiet", "-m",
-        f"JUDGE: {verdict} — signed by {verifier}"], check=False)
-    sh(["git", "-C", str(fork), "push", "--no-verify", "--quiet", "origin", "main"], check=False)
+        f"JUDGE: {verdict} — signed by {verifier}"])
+    sh(["git", "-C", str(fork), "push", "--no-verify", "--quiet", "origin", "main"])
+    return True
 
 
 def slug_of(book):
     return book.split("--", 1)[1]
 
 
-def render_reader(fork: Path, book, accent):
-    out = SITE / "read" / book
+def source_repo_url(book: str) -> str:
+    return f"https://github.com/{ORG}/{slug_of(book)}"
+
+
+def build_release_artifacts(fork: Path, book: str, accent: str, out: Path):
     out.mkdir(parents=True, exist_ok=True)
-    # build a Kindle/e-reader EPUB alongside the web reader
     cover = SITE / "assets/covers" / f"{book}-front.png"
-    epub_args = ["--cover", str(cover)] if cover.is_file() else []
-    sh([str(BUILDPY), str(HERE / "build_epub.py"), str(fork), str(out / "book.epub")] + epub_args)
-    repo = f"https://github.com/{ORG}/{slug_of(book)}"
+    sh([str(BUILDPY), str(HERE / "build_epub.py"), str(fork), str(out / "book.epub"),
+        "--cover", str(cover)])
+    repo = source_repo_url(book)
     r = sh([str(BUILDPY), str(HERE / "render_book.py"), str(fork), str(out), "--accent", accent,
             "--epub", "book.epub", "--source", repo])
     verified = sh([sys.executable, str(HERE / "verify_rendered_book.py"), str(fork), str(out)])
     return out, " · ".join((r.stdout.strip(), verified.stdout.strip()))
+
+
+def preflight_release_artifacts(fork: Path, book: str, accent: str) -> str:
+    """Build and verify a disposable release before signing mutates the public trail."""
+    with tempfile.TemporaryDirectory(prefix="oailly-judge-preflight-") as temp_name:
+        _, message = build_release_artifacts(
+            fork, book, accent, Path(temp_name) / "read" / book
+        )
+        return message
+
+
+def render_reader(fork: Path, book, accent):
+    return build_release_artifacts(fork, book, accent, SITE / "read" / book)
 
 
 def set_status_published(book, aibn_human):
@@ -203,25 +345,28 @@ ACCENTS = {"rogerai-labs--the-borrowed-world": "#7FB4A6",
 
 def cmd_sign(a):
     book = a.book
-    verdict = (a.verdict or "PUBLISH").upper()
+    verdict = normalize_verdict(a.verdict or "PUBLISH")
     verifier = a.verifier or "Roger AI"
     rows = dict(at_judge())
-    if book not in rows and verdict != "REJECT":
+    if book not in rows:
         raise SystemExit(f"{book} is not at 4-judge (state: {C.status_of(book)['state']}).")
 
     fork, st = fork_and_pass(book)
-    # confirm the panel is complete + PUBLISH-leaning before allowing a PUBLISH signature
     seats = C.load_seats(fork, "v2", book, 3)
-    if verdict == "PUBLISH" and not C.panel_complete(seats):
-        # legacy panels have verify-*.md but maybe no SEATS.json; accept 3 verify files
-        vfiles = list((fork / "review" / "v2").glob("verify-*.md"))
-        if len(vfiles) < 3:
-            raise SystemExit("panel is not complete (need 3 verification reviews) — cannot sign PUBLISH.")
+    validate_judge_case(fork, book, seats, verdict)
+    accent = ACCENTS.get(book, "#4FD6C3")
+    if verdict == "PUBLISH":
+        validate_release_inputs(book)
+        artifact_preflight = preflight_release_artifacts(fork, book, accent)
+        print(f"[preflight] disposable release verified ({artifact_preflight})")
 
-    rec = aibn.assign(book)
-    print(f"[1/6] verdict {verdict}, verifier {verifier}, {rec['aibn_human']}")
-    finalize_verdict(fork, book, verifier, verdict, a.reject)
-    print("[2/6] judge-verdict.md signed + pushed to the fork trail")
+    print(f"[1/6] verdict {verdict}, verifier {verifier}; complete case preflight passed")
+    wrote_verdict = finalize_verdict(fork, book, verifier, verdict, a.reject)
+    print(
+        "[2/6] judge-verdict.md signed + pushed to the fork trail"
+        if wrote_verdict
+        else "[2/6] existing matching signed verdict retained"
+    )
 
     if verdict == "REJECT":
         # mark rejected, don't publish
@@ -234,7 +379,7 @@ def cmd_sign(a):
         print("recorded REJECT. (No publish.) Commit the status repos + deploy manually if desired.")
         return
 
-    accent = ACCENTS.get(book, "#4FD6C3")
+    rec = aibn.assign(book)
     out, msg = render_reader(fork, book, accent)
     print(f"[3/6] reader rendered cover-to-cover → {out}  ({msg})")
     set_status_published(book, rec["aibn_human"])
@@ -270,7 +415,8 @@ def main():
     sub.add_parser("cases").set_defaults(fn=cmd_cases)
     s = sub.add_parser("show"); s.add_argument("book"); s.set_defaults(fn=cmd_show)
     g = sub.add_parser("sign"); g.add_argument("book")
-    g.add_argument("--verifier", default="Roger AI"); g.add_argument("--verdict", default="PUBLISH")
+    g.add_argument("--verifier", default="Roger AI")
+    g.add_argument("--verdict", default="PUBLISH", choices=sorted(VERDICTS))
     g.add_argument("--reject", default=""); g.add_argument("--no-deploy", action="store_true")
     g.set_defaults(fn=cmd_sign)
     a = p.parse_args(); a.fn(a)
