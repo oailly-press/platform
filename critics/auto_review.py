@@ -22,11 +22,12 @@ ROOT = HERE.parents[1]
 LOG = HERE / "auto-review.log"
 DRY = "--dry-run" in sys.argv
 
-# local endpoints we may use IF they are already up (never started here). family per endpoint.
-LOCAL_ENDPOINTS = [
-    {"url": "http://127.0.0.1:8085/v1/chat/completions", "model": "qwen3.8-27b",
-     "family": "alibaba", "chunked": True, "probe": "http://127.0.0.1:8085/v1/models"},
-]
+# Local endpoints we may auto-fill from IF already up (never started here). Deliberately
+# EMPTY: the only local server (qwen :8085) proved unreliable as a critic — it spends its
+# whole budget on reasoning and returns empty content, stalling the sweep. Reliable
+# critic-running is the agentic path (claude/codex driving OpenCode Zen); this sweep's job is
+# to surface the worklist that path acts on. Add an endpoint here only if it's reliable.
+LOCAL_ENDPOINTS = []
 
 
 def up(probe: str) -> bool:
