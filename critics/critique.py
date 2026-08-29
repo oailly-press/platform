@@ -25,9 +25,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]                       # ~/ai/books-by-ai
-SITE = ROOT / "gh/site-repo"
-REVS = ROOT / "gh/reviews-repo"
+CHECKOUTS = HERE.parents[1]                  # .../gh locally; checkout parent in CI
+ROOT = CHECKOUTS.parent if CHECKOUTS.name == "gh" else CHECKOUTS
+SITE = CHECKOUTS / "site-repo"
+REVS = CHECKOUTS / "reviews-repo"
 FORKS = HERE / ".forks"                      # local clones, gitignored
 SEATS = ["A", "B", "C"]
 CLAIM_TTL_MIN = 45

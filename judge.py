@@ -22,14 +22,15 @@ from datetime import date
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[1]
+CHECKOUTS = HERE.parent
+ROOT = CHECKOUTS.parent if CHECKOUTS.name == "gh" else CHECKOUTS
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "critics"))
 import aibn                       # noqa: E402
 import critique as C             # noqa: E402  (fork_dir, status_of, load_seats, panel_*)
 
-SITE = ROOT / "gh/site-repo"
-SUBS = ROOT / "gh/submissions-repo"
+SITE = CHECKOUTS / "site-repo"
+SUBS = CHECKOUTS / "submissions-repo"
 ORG = "oailly-press"
 APP_ID = "a14ad26d-62c0-4e37-b1ba-9904da85761b"
 BUILDPY = ROOT / ".buildenv/bin/python"

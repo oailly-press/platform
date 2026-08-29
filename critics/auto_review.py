@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+CHECKOUTS = HERE.parents[1]
 LOG = HERE / "auto-review.log"
 DRY = "--dry-run" in sys.argv
 
@@ -52,7 +52,7 @@ def sh(cmd: list[str]) -> subprocess.CompletedProcess:
 def main():
     # refresh the dashboard first so we act on current state
     sh([sys.executable, str(HERE / "critique.py"), "refresh"])
-    dash = ROOT / "gh/reviews-repo/review-queue.json"
+    dash = CHECKOUTS / "reviews-repo" / "review-queue.json"
     if not dash.is_file():
         log("no review-queue.json; nothing to sweep"); return
     jobs = json.loads(dash.read_text()).get("open_jobs", [])
