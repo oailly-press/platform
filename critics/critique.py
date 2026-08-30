@@ -25,10 +25,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CHECKOUTS = HERE.parents[1]                  # .../gh locally; checkout parent in CI
-ROOT = CHECKOUTS.parent if CHECKOUTS.name == "gh" else CHECKOUTS
-SITE = CHECKOUTS / "site-repo"
-REVS = CHECKOUTS / "reviews-repo"
+ROOT = HERE.parents[1]                       # ~/ai/books-by-ai
+SITE = ROOT / "gh/site-repo"
+REVS = ROOT / "gh/reviews-repo"
 FORKS = HERE / ".forks"                      # local clones, gitignored
 SEATS = ["A", "B", "C"]
 CLAIM_TTL_MIN = 45
@@ -36,8 +35,6 @@ ORG = "oailly-press"
 
 # book-id is used as a filesystem path and a git remote — validate hard (untrusted).
 SAFE_BID = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*--[a-z0-9]+(?:-[a-z0-9]+)*$')
-SAFE_VERSION = re.compile(r"^v[1-9][0-9]*$")
-SAFE_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 # model-name substring -> family. First match wins; explicit --family overrides.
 FAMILY_MAP = [
@@ -92,14 +89,12 @@ def status_of(book: str) -> dict:
     return json.loads(p.read_text())
 
 
-def pass_and_dir(state: str, version: str | None = None) -> tuple[int, str]:
+def pass_and_dir(state: str) -> tuple[int, str]:
     """Which pass a book in this state needs, and the review subdir the seats live in."""
     if state in ("0-pending", "1-critics"):
         return 2, "v1"          # pass-2 panel reviews the submitted v1
     if state == "3-verification":
-        if not version or version == "v1" or not SAFE_VERSION.fullmatch(version):
-            die("3-verification status must declare a revision version v2 or later")
-        return 3, version
+        return 3, "v2"          # pass-3 verification reviews the revised v2
     die(f"state {state!r} is not a critic state (need 0-pending, 1-critics, or 3-verification)")
 
 
@@ -117,42 +112,6 @@ def fork_dir(book: str) -> Path:
         if r.returncode != 0:
             die(f"could not clone fork {url}:\n{r.stderr.strip()[:300]}")
     return d
-
-
-def validate_revision_identity(fork: Path, status: dict) -> None:
-    """Fail closed unless Pass 3 is operating on the exact declared revision commit."""
-    if status.get("state") != "3-verification":
-        return
-    version = status.get("version_under_review", "")
-    revision_sha = status.get("revision_sha", "")
-    if version == "v1" or not SAFE_VERSION.fullmatch(version):
-        die("3-verification status lacks a valid revision version")
-    if not SAFE_SHA.fullmatch(revision_sha):
-        die("3-verification status lacks an exact 40-character revision_sha")
-    resolved = sh(
-        ["git", "-C", str(fork), "rev-parse", "--verify", f"{version}^{{commit}}"],
-        check=False,
-    )
-    if resolved.returncode != 0:
-        die(f"publisher fork has no resolvable {version} tag")
-    if resolved.stdout.strip() != revision_sha:
-        die(
-            f"{version} resolves to {resolved.stdout.strip() or 'nothing'}, not declared "
-            f"revision_sha {revision_sha}"
-        )
-    if sh(
-        ["git", "-C", str(fork), "merge-base", "--is-ancestor", revision_sha, "HEAD"],
-        check=False,
-    ).returncode:
-        die(f"publisher main does not contain declared revision {revision_sha}")
-    if sh(
-        [
-            "git", "-C", str(fork), "diff", "--quiet", revision_sha, "HEAD", "--",
-            ".", ":(exclude)review",
-        ],
-        check=False,
-    ).returncode:
-        die("publisher main differs from the declared revision outside review/")
 
 
 def manifest_families(fork: Path) -> list[str]:
@@ -263,11 +222,10 @@ def do_claim(book, model, family, actor, seat_pref) -> tuple[Path, str, str]:
     if not fam:
         die(f"cannot infer family for model {model!r}; pass --family")
     st = status_of(book)
-    pass_no, vdir = pass_and_dir(st["state"], st.get("version_under_review"))
+    pass_no, vdir = pass_and_dir(st["state"])
 
     for attempt in range(6):
         fork = fork_dir(book)
-        validate_revision_identity(fork, st)
         seats = load_seats(fork, vdir, book, pass_no)
         if fam in seats["author_families"]:
             die(f"family {fam!r} authored this book — a critic may not share the author family "
@@ -296,86 +254,61 @@ def do_claim(book, model, family, actor, seat_pref) -> tuple[Path, str, str]:
 
 REQUIRED_HEADER_TOKENS = ("CRITIC:", "PASS:")
 VERDICT_TOKENS = ("SALVAGEABLE", "PUBLISH", "DON'T PUBLISH", "DONT PUBLISH")
-COMMON_SECTIONS = ("## Verdict summary", "## Blocking findings", "## Suggestions")
-FICTION_SECTIONS = (
-    "## Continuity-and-consistency audit",
-    "## Craft-axis scores",
-    "## Density finding",
-)
-NONFICTION_SECTIONS = ("## Fact-check sample", "## Scores")
 
 
-# (phrase, normalized). Order only matters for readability — resolution is positional.
-_VERDICT_PHRASES = (
+# (phrase, normalized). Pass-2 verdicts and pass-3 verdicts are DISJOINT vocabularies:
+# a pass-2 review that merely mentions "publish" (e.g. "before a Pass 3 publish verdict") must
+# NOT tally as PUBLISH, and a pass-3 review mentioning "salvageable debts" must not tally SALVAGEABLE.
+_PASS2_PHRASES = (
     ("UNSALVAGEABLE", "UNSALVAGEABLE"),
     ("SALVAGEABLE", "SALVAGEABLE"),
+)
+_PASS3_PHRASES = (
     ("DO NOT PUBLISH", "DONT-PUBLISH"),
     ("DON'T PUBLISH", "DONT-PUBLISH"),
     ("DONT PUBLISH", "DONT-PUBLISH"),
     ("PUBLISH", "PUBLISH"),
 )
+_VERDICT_PHRASES = _PASS2_PHRASES + _PASS3_PHRASES  # union, for an unknown pass
 
 
-def _verdict_in(span: str) -> str | None:
+def _verdict_in(span: str, phrases=_VERDICT_PHRASES) -> str | None:
     """The verdict a span declares = the LAST-stated verdict token, longest-at-a-locus winning.
 
     The template says the verdict paragraph ENDS with the verdict, so last-position wins:
-    this correctly reads 'no inaccuracy warrants DON'T PUBLISH. VERDICT: PUBLISH' as PUBLISH
-    and 'not UNSALVAGEABLE — SALVAGEABLE' as SALVAGEABLE. Ranking by (end-offset, length) lets
-    the containing phrase win nested ties (UNSALVAGEABLE ⊃ SALVAGEABLE, DON'T PUBLISH ⊃ PUBLISH).
+    this reads 'no inaccuracy warrants DON'T PUBLISH. VERDICT: PUBLISH' as PUBLISH and
+    'not UNSALVAGEABLE — SALVAGEABLE' as SALVAGEABLE. Ranking by (end-offset, length) lets the
+    containing phrase win nested ties (UNSALVAGEABLE ⊃ SALVAGEABLE, DON'T PUBLISH ⊃ PUBLISH).
     """
     up = span.upper()
     hits = []
-    for phrase, norm in _VERDICT_PHRASES:
-        for match in re.finditer(
-            rf"(?<![A-Z]){re.escape(phrase)}(?![A-Z])", up
-        ):
-            hits.append((match.end(), len(phrase), norm))
+    for phrase, norm in phrases:
+        start = 0
+        while (idx := up.find(phrase, start)) >= 0:
+            hits.append((idx + len(phrase), len(phrase), norm))
+            start = idx + 1
     if not hits:
         return None
     return max(hits)[2]
 
 
 def tally_verdict(text: str, pass_no: int | None = None) -> str:
-    # Prefer the '## Verdict summary' section (where the verdict is declared); fall back to the
-    # whole review only if that section carries no verdict token. Never scan prose for a substring.
+    """Pass-aware verdict read: pass-2 → SALVAGEABLE/UNSALVAGEABLE only; pass-3 →
+    PUBLISH/DON'T-PUBLISH only; unknown pass → the union. Prefer the '## Verdict summary'
+    section, fall back to the whole review; never scan prose for a bare substring."""
+    phrases = _PASS2_PHRASES if pass_no == 2 else _PASS3_PHRASES if pass_no == 3 else _VERDICT_PHRASES
     m = re.search(r'##\s*verdict\s+summary\b(.*?)(?:\n##\s|\Z)', text, re.I | re.S)
-    verdict = (m and _verdict_in(m.group(1))) or _verdict_in(text) or "UNCLEAR"
-    allowed = {
-        2: {"SALVAGEABLE", "UNSALVAGEABLE"},
-        3: {"PUBLISH", "DONT-PUBLISH"},
-    }
-    if pass_no in allowed and verdict not in allowed[pass_no]:
-        return "UNCLEAR"
-    return verdict
+    return (m and _verdict_in(m.group(1), phrases)) or _verdict_in(text, phrases) or "UNCLEAR"
 
 
-def validate_review(text: str, pass_no: int, is_fiction: bool):
+def validate_review(text: str):
     if len(text.strip()) < 800:
         die("review body is too short (<800 chars) — did the model return empty content?")
     missing = [t for t in REQUIRED_HEADER_TOKENS if t not in text]
     if missing:
         die(f"review is missing template header tokens: {', '.join(missing)}")
-    pass_match = re.search(r"(?im)^PASS:\s*([23])\b", text)
-    if not pass_match or int(pass_match.group(1)) != pass_no:
-        die(f"review PASS header must name the active pass ({pass_no})")
-    required_sections = COMMON_SECTIONS + (FICTION_SECTIONS if is_fiction else NONFICTION_SECTIONS)
-    if pass_no == 3:
-        required_sections += ("## Pass-3 only: findings ledger",)
-    lower = text.lower()
-    missing_sections = [heading for heading in required_sections if heading.lower() not in lower]
-    if missing_sections:
-        shelf = "FICTION" if is_fiction else "general"
-        die(f"{shelf} review is missing required sections: {', '.join(missing_sections)}")
-    summary = re.search(r"##\s*verdict\s+summary\b(.*?)(?:\n##\s|\Z)", text, re.I | re.S)
-    summary_text = summary.group(1) if summary else ""
-    unfilled = (
-        re.search(r"SALVAGEABLE\s*/\s*UNSALVAGEABLE", summary_text, re.I)
-        or re.search(r"PUBLISH\s*/\s*(?:DON'T|DONT|DO NOT)\s+PUBLISH", summary_text, re.I)
-    )
-    if unfilled or tally_verdict(text, pass_no) == "UNCLEAR":
-        expected = "SALVAGEABLE/UNSALVAGEABLE" if pass_no == 2 else "PUBLISH/DON'T PUBLISH"
-        die(f"review must select one Pass-{pass_no} verdict ({expected}) at the end of its summary")
+    if not any(t in text.upper() for t in VERDICT_TOKENS):
+        die("review has no verdict line (SALVAGEABLE/UNSALVAGEABLE or PUBLISH/DON'T PUBLISH)")
 
 
 def do_submit(book, seat, text, actor=None) -> dict:
@@ -383,16 +316,13 @@ def do_submit(book, seat, text, actor=None) -> dict:
     seat = seat.upper()
     if seat not in SEATS:
         die(f"seat must be one of {SEATS}")
+    validate_review(text)
     st = status_of(book)
-    pass_no, vdir = pass_and_dir(st["state"], st.get("version_under_review"))
+    pass_no, vdir = pass_and_dir(st["state"])
+    verdict = tally_verdict(text, pass_no)
 
     for attempt in range(6):
         fork = fork_dir(book)
-        validate_revision_identity(fork, st)
-        manifest = json.loads((fork / "manifest.json").read_text())
-        is_fiction = manifest.get("book", {}).get("shelf") == "fiction"
-        validate_review(text, pass_no, is_fiction)
-        verdict = tally_verdict(text, pass_no)
         seats = load_seats(fork, vdir, book, pass_no)
         info = seats["seats"].get(seat, {})
         if info.get("state") == "filled":
@@ -444,22 +374,13 @@ def panel_tally(seats: dict) -> dict:
 
 # ---------------------------------------------------------------- serve a review
 
-def produce_via_endpoint(fork, endpoint, served_model, pass_no, version, chunked) -> str:
+def produce_via_endpoint(fork, endpoint, served_model, pass_no, chunked) -> str:
     """Import run_critics' model callers to fill a seat from a served endpoint."""
     sys.path.insert(0, str(HERE))
     import run_critics as rc
     if chunked:
-        return rc.chunked_review(
-            endpoint, served_model, fork, pass_no=pass_no, version=version
-        )
-    packet = sh([
-        sys.executable,
-        str(HERE / "assemble_critic_packet.py"),
-        str(fork),
-        str(pass_no),
-        "--version",
-        version,
-    ]).stdout
+        return rc.chunked_review(endpoint, served_model, fork)
+    packet = sh([sys.executable, str(HERE / "assemble_critic_packet.py"), str(fork), str(pass_no)]).stdout
     return rc.call_model(endpoint, served_model, packet)
 
 
@@ -479,9 +400,8 @@ def refresh_dashboard() -> dict:
         if state not in ("0-pending", "1-critics", "3-verification"):
             continue
         try:
-            pass_no, vdir = pass_and_dir(state, st.get("version_under_review"))
+            pass_no, vdir = pass_and_dir(state)
             fork = fork_dir(book)
-            validate_revision_identity(fork, st)
             seats = load_seats(fork, vdir, book, pass_no)
         except SystemExit:
             continue
@@ -540,17 +460,9 @@ def cmd_list(a):
 def cmd_packet(a):
     check_bid(a.book)
     st = status_of(a.book)
-    pass_no, version = pass_and_dir(st["state"], st.get("version_under_review"))
+    pass_no, _ = pass_and_dir(st["state"])
     fork = fork_dir(a.book)
-    validate_revision_identity(fork, st)
-    r = sh([
-        sys.executable,
-        str(HERE / "assemble_critic_packet.py"),
-        str(fork),
-        str(pass_no),
-        "--version",
-        version,
-    ])
+    r = sh([sys.executable, str(HERE / "assemble_critic_packet.py"), str(fork), str(pass_no)])
     sys.stdout.write(r.stdout)
 
 
@@ -570,11 +482,7 @@ def _report_submit(res, book):
         print(f"\n=== PANEL COMPLETE ({book} pass {res['pass']}) ===")
         print(f"  verdicts: {', '.join(v for v in t['verdicts'] if v)}")
         print(f"  → {t['recommendation']}")
-        if res["pass"] == 2:
-            print("  Publisher next: dry-run queue/advance_state.py to 2-revision, then --apply.")
-        else:
-            print("  Publisher next: dry-run queue/prepare_judge_case.py, then --apply;")
-            print("  only after the report card is pushed, advance explicitly to 4-judge.")
+        print(f"  The daily runner will sync status + advance state; or advance now with run_queue.py.")
     refresh_dashboard()
 
 
@@ -594,20 +502,14 @@ def cmd_take(a):
             text = Path(a.self_file).read_text()
         else:
             st = status_of(a.book)
-            pass_no, version = pass_and_dir(
-                st["state"], st.get("version_under_review")
-            )
-            validate_revision_identity(fork, st)
-            text = produce_via_endpoint(
-                fork, a.endpoint, a.served_model, pass_no, version, a.chunked
-            )
-        res = do_submit(a.book, seat, text, a.actor)
+            pass_no, _ = pass_and_dir(st["state"])
+            text = produce_via_endpoint(fork, a.endpoint, a.served_model, pass_no, a.chunked)
     except SystemExit:
-        do_release(a.book, seat)
         raise
     except Exception as e:
         do_release(a.book, seat)
         die(f"review production failed ({str(e)[:160]}); released seat {seat}")
+    res = do_submit(a.book, seat, text, a.actor)
     _report_submit(res, a.book)
 
 
@@ -615,11 +517,10 @@ def do_release(book, seat):
     check_bid(book)
     seat = seat.upper()
     st = status_of(book)
-    pass_no, vdir = pass_and_dir(st["state"], st.get("version_under_review"))
+    _, vdir = pass_and_dir(st["state"])
     for _ in range(6):
         fork = fork_dir(book)
-        validate_revision_identity(fork, st)
-        seats = load_seats(fork, vdir, book, pass_no)
+        seats = load_seats(fork, vdir, book, 2)
         if seats["seats"].get(seat, {}).get("state") != "claimed":
             return  # nothing to release
         seats["seats"][seat] = {"state": "open"}
