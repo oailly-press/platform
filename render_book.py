@@ -98,6 +98,15 @@ th{{font-family:var(--sans);color:var(--muted)}}
 .toc a{{display:flex;gap:18px;padding:15px 6px;text-decoration:none;color:var(--fg)}}
 .toc a:hover{{background:var(--panel)}}
 .toc .n{{font-family:var(--mono);color:var(--accent);min-width:2ch}}
+.morefrom{{margin:56px 0 0;border-top:1px solid var(--line);padding-top:26px}}
+.morefrom h2{{font-family:var(--sans);font-weight:800;font-size:1.05em;margin:0 0 16px;letter-spacing:-.01em}}
+.mf-row{{display:flex;gap:18px;flex-wrap:wrap}}
+.mf-card{{display:flex;flex-direction:column;gap:7px;width:98px;text-decoration:none;color:var(--fg)}}
+.mf-card img{{width:98px;height:auto;border:1px solid var(--line);border-radius:4px;box-shadow:0 6px 20px rgba(0,0,0,.4);transition:transform .15s}}
+.mf-card:hover img{{transform:translateY(-3px)}}
+.mf-card span{{font-family:var(--sans);font-size:11px;line-height:1.32;color:var(--muted)}}
+.mf-card:hover span{{color:var(--fg)}}
+@media print{{.morefrom{{display:none}}}}
 nav.pager{{display:flex;justify-content:space-between;gap:16px;margin-top:64px;border-top:1px solid var(--line);padding-top:24px}}
 nav.pager a{{text-decoration:none;color:var(--fg);font-family:var(--sans);font-weight:600}}
 nav.pager a span{{display:block;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.12em}}
@@ -354,7 +363,31 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
             f'<b>FULL TEXT (machines)</b> <a href="book.md">book.md — the whole book, one GET</a><br>'
             f'<b>SOURCE</b> <a href="{repo}">GitHub repo — manifest, chapters &amp; the full review trail</a> '
             f'· <a href="/book/?id={book_id}">book detail page</a></div>')
-    idx = idx + cite
+    # "more from o'ailly" — discovery panel: other published books, same shelf first, then newest
+    more = ''
+    if SITE_ASSETS is not None:
+        cat_path = SITE_ASSETS.parents[1] / "catalog.json"
+        try:
+            others = [b for b in json.loads(cat_path.read_text()).get("books", [])
+                      if b.get("status") == "published" and b.get("id") != book_id and b.get("cover")]
+        except Exception:
+            others = []
+        if others:
+            shelf = book.get("shelf")
+            key = lambda b: (b.get("added") or "")
+            same = sorted((b for b in others if b.get("shelf") == shelf), key=key, reverse=True)
+            rest = sorted((b for b in others if b.get("shelf") != shelf), key=key, reverse=True)
+            picks = (same + rest)[:4]
+            cards = "".join(
+                f'<a class="mf-card" href="/read/{b["id"]}/">'
+                f'<img src="/assets/covers/thumbs/{b["id"]}-front.webp" '
+                f'onerror="this.onerror=null;this.src=\'/assets/covers/{b["id"]}-front.png\'" '
+                f'alt="{_attr(b.get("title",""))} cover" loading="lazy">'
+                f'<span>{_attr(b.get("title",""))}</span></a>'
+                for b in picks)
+            more = ('<div class="morefrom"><h2>More from o\'ailly</h2>'
+                    f'<div class="mf-row">{cards}</div></div>')
+    idx = idx + cite + more
     (out_dir / "index.html").write_text(shell(book["title"], idx), encoding="utf-8")
 
     # --- chapter pages: paginated reader (flip page by page, like a real book) ---
