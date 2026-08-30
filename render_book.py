@@ -290,6 +290,13 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
     release_status = publication_status or manifest["review"].get("status", "draft")
     review_display = (f'<a href="{review_url}">{review_url}</a>'
                       if review_url else "pending publication")
+    # when published, reconcile the author's draft-time DISCLOSURE (which predates release) with the
+    # signed reality — otherwise a live book still reads "verification … remain pending".
+    attestation = ((f'<b>RELEASE ATTESTATION</b> Published and signed by {verifier}'
+                    + (f' · {aibn_rec["aibn_human"]}' if aibn_rec else '')
+                    + '. The draft note above predates release; human verification is complete '
+                      'and the full review trail is public (below).<br>')
+                   if release_status == "published" else '')
     idx = (cover_open
            + f'<div class="meta">{book.get("series") or "O\'AILLY"} · '
            f'{book["tier"].upper()}'
@@ -299,6 +306,7 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
            f'<div class="prov"><b>WRITTEN BY</b> {written}<br>'
            f'<b>VERIFIED BY</b> {verifier}<br>'
            f'<b>DISCLOSURE</b> {prov["disclosure_statement"]}<br>'
+           f'{attestation}'
            f'<b>PUBLICATION</b> {release_status.upper()}<br>'
            f'<b>REVIEW TRAIL</b> {review_display}</div>'
            + (f'<div class="dl"><a href="{epub}" download>⬇ EPUB — Kindle &amp; e-readers</a>'
