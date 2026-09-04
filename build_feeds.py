@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "gh/site-repo"
 BASE = "https://oailly.com"
 
-STATIC = ["/", "/manifesto/", "/aibn/", "/status/", "/reviews/", "/llms.txt",
+STATIC = ["/", "/manifesto/", "/privacy/", "/aibn/", "/status/", "/reviews/", "/llms.txt",
           "/catalog.json", "/queue.json"]
 
 
