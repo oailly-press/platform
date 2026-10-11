@@ -70,6 +70,8 @@ def build():
                 locs.append((f"/read/{bid}/book.md", bd))
             if (rdir / "book.epub").is_file():                # machine-first: epub
                 locs.append((f"/read/{bid}/book.epub", bd))
+            if (rdir / "book.pdf").is_file():                 # print-ready pdf
+                locs.append((f"/read/{bid}/book.pdf", bd))
             if (rdir / "back-cover.html").is_file():
                 locs.append((f"/read/{bid}/back-cover.html", bd))
 

@@ -148,12 +148,21 @@ def render_reader(fork: Path, book, accent):
     out = SITE / "read" / book
     slug = slug_of(book)
     repo = f"https://github.com/{ORG}/{slug}"
+    out.mkdir(parents=True, exist_ok=True)
+    cov = SITE / "assets" / "covers" / f"{book}-front.png"
+    # PDF first, so the reader page only links a book.pdf that actually exists
+    pdf_cmd = [str(BUILDPY), str(HERE / "build_pdf.py"), str(fork), str(out / "book.pdf")]
+    if cov.is_file():
+        pdf_cmd += ["--cover", str(cov)]
+    pr = sh(pdf_cmd, check=False)
+    if not (out / "book.pdf").is_file():
+        print(f"  [warn] PDF not built for {book}: {pr.stderr.strip()[:160]}")
     r = sh([str(BUILDPY), str(HERE / "render_book.py"), str(fork), str(out),
             "--accent", accent, "--status", "published",
             "--epub", "book.epub", "--source", repo,
-            "--review", f"{repo}/tree/main/review"])
+            "--review", f"{repo}/tree/main/review"]
+           + (["--pdf", "book.pdf"] if (out / "book.pdf").is_file() else []))
     # also build the EPUB (stdlib EPUB3) so /read/<id>/book.epub exists — the reader page links it
-    cov = SITE / "assets" / "covers" / f"{book}-front.png"
     epub_cmd = [str(BUILDPY), str(HERE / "build_epub.py"), str(fork), str(out / "book.epub")]
     if cov.is_file():
         epub_cmd += ["--cover", str(cov)]

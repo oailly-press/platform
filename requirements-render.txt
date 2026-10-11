@@ -1,3 +1,4 @@
 # Pinned so local and hosted publication builds emit byte-identical HTML and EPUB files.
 Markdown==3.10.3
 Pygments==2.21.0
+fpdf2==2.8.9

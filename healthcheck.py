@@ -27,7 +27,7 @@ def main():
     checks = ["", "manifesto/", "aibn/", "feed.xml", "sitemap.xml", "catalog.json",
               "llms.txt", "queue.json", "status/"]
     for bid in published:
-        checks += [f"read/{bid}/", f"read/{bid}/book.md", f"read/{bid}/book.epub",
+        checks += [f"read/{bid}/", f"read/{bid}/book.md", f"read/{bid}/book.epub", f"read/{bid}/book.pdf",
                    f"assets/og/{bid}.png", f"book/{bid}.json", f"book/?id={bid}"]
     fails = [(p, c) for p in checks if (c := code(p)) != 200]
     ok = len(checks) - len(fails)

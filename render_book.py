@@ -2,7 +2,7 @@
 """Render a book source tree into the static web reader.
 
     .buildenv/bin/python platform/render_book.py <book_dir> <out_dir> [--accent HEX]
-        [--epub URL] [--source URL] [--review URL] [--status STATUS]
+        [--epub URL] [--pdf URL] [--source URL] [--review URL] [--status STATUS]
 
 Output: <out_dir>/index.html (title page: cover, TOC, provenance) plus one page per
 chapter with prev/next navigation. Pure static HTML — this IS how readers read books on
@@ -235,7 +235,7 @@ def md(text: str) -> str:
 
 
 def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: str = '',
-           review: str = '', publication_status: str = '') -> None:
+           review: str = '', publication_status: str = '', pdf: str = '') -> None:
     manifest = json.loads((book_dir / "manifest.json").read_text(encoding="utf-8"))
     book, prov = manifest["book"], manifest["provenance"]
     chapters = manifest["structure"]["chapters"]
@@ -310,7 +310,8 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
            f'<b>PUBLICATION</b> {release_status.upper()}<br>'
            f'<b>REVIEW TRAIL</b> {review_display}</div>'
            + (f'<div class="dl"><a href="{epub}" download>⬇ EPUB — Kindle &amp; e-readers</a>'
-              f'<a href="javascript:window.print()">⎙ Print / save as PDF</a>'
+              + (f'<a href="{pdf}" download>⬇ PDF — print &amp; any device</a>' if pdf
+                 else '<a href="javascript:window.print()">⎙ Print / save as PDF</a>')
               + (f'<a href="{source}">&lt;/&gt; Raw Markdown — for machines</a>' if source else '')
               + '</div>' if epub else '')
            + f'<ul class="toc">{toc}</ul>')
@@ -353,7 +354,10 @@ def render(book_dir: Path, out_dir: Path, accent: str, epub: str = '', source: s
                    "url": book_url + "book.epub"},
                   {"@type": "Book", "bookFormat": "https://schema.org/EBook",
                    "encodingFormat": "text/markdown", "name": f'{book["title"]} (Markdown)',
-                   "url": book_url + "book.md"}],
+                   "url": book_url + "book.md"}]
+                  + ([{"@type": "Book", "bookFormat": "https://schema.org/EBook",
+                       "encodingFormat": "application/pdf", "name": f'{book["title"]} (PDF)',
+                       "url": book_url + "book.pdf"}] if pdf else []),
               "description": f"{book.get('subtitle','')} — written by machines, verified by humans; full review trail publishes with the book."}
     if word_count:
         jsonld["wordCount"] = word_count
@@ -453,4 +457,4 @@ if __name__ == "__main__":
     def opt(name, default=''):
         return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
     render(Path(args[0]), Path(args[1]), opt("--accent", ACCENT_DEFAULT),
-           opt("--epub"), opt("--source"), opt("--review"), opt("--status"))
+           opt("--epub"), opt("--source"), opt("--review"), opt("--status"), opt("--pdf"))
